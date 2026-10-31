@@ -15,4 +15,6 @@ public interface TraineeDao {
     Optional<Trainee> findByUsername(String username);
 
     List<Trainee> findAll();
+
+    long countActive();
 }

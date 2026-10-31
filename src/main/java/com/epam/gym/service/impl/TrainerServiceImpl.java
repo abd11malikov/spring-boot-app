@@ -6,6 +6,7 @@ import com.epam.gym.dto.Credentials;
 import com.epam.gym.model.Trainer;
 import com.epam.gym.model.TrainingType;
 import com.epam.gym.model.User;
+import com.epam.gym.monitoring.metrics.GymMetrics;
 import com.epam.gym.service.AuthenticationService;
 import com.epam.gym.service.TrainerService;
 import com.epam.gym.util.PasswordGenerator;
@@ -31,17 +32,20 @@ public class TrainerServiceImpl implements TrainerService {
     private final AuthenticationService authenticationService;
     private final UsernameGenerator usernameGenerator;
     private final PasswordGenerator passwordGenerator;
+    private final GymMetrics metrics;
 
     public TrainerServiceImpl(TrainerDao trainerDao,
                               TrainingTypeDao trainingTypeDao,
                               AuthenticationService authenticationService,
                               UsernameGenerator usernameGenerator,
-                              PasswordGenerator passwordGenerator) {
+                              PasswordGenerator passwordGenerator,
+                              GymMetrics metrics) {
         this.trainerDao = trainerDao;
         this.trainingTypeDao = trainingTypeDao;
         this.authenticationService = authenticationService;
         this.usernameGenerator = usernameGenerator;
         this.passwordGenerator = passwordGenerator;
+        this.metrics = metrics;
     }
 
     @Override
@@ -58,6 +62,7 @@ public class TrainerServiceImpl implements TrainerService {
         user.setActive(true);
 
         Trainer created = trainerDao.create(trainer);
+        metrics.trainerRegistered();
         log.info("Created trainer with username {}", user.getUsername());
         return created;
     }

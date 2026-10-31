@@ -1,6 +1,6 @@
 package com.epam.gym.dao.impl;
 
-import com.epam.gym.config.AppConfig;
+import com.epam.gym.dao.DaoTest;
 import com.epam.gym.dao.TraineeDao;
 import com.epam.gym.dao.TrainerDao;
 import com.epam.gym.dao.TrainingDao;
@@ -12,9 +12,6 @@ import com.epam.gym.model.TrainingType;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.test.context.TestPropertySource;
-import org.springframework.test.context.junit.jupiter.SpringJUnitConfig;
-import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
 import java.util.List;
@@ -26,9 +23,7 @@ import static com.epam.gym.TestEntities.training;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-@SpringJUnitConfig(AppConfig.class)
-@TestPropertySource("classpath:application-test.properties")
-@Transactional
+@DaoTest
 class TrainingDaoImplTest {
 
     private static final LocalDate JAN_10 = LocalDate.of(2026, 1, 10);

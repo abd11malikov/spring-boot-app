@@ -8,6 +8,7 @@ import com.epam.gym.exception.AuthenticationFailedException;
 import com.epam.gym.model.Trainee;
 import com.epam.gym.model.Trainer;
 import com.epam.gym.model.User;
+import com.epam.gym.monitoring.metrics.GymMetrics;
 import com.epam.gym.service.AuthenticationService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -27,13 +28,16 @@ public class AuthenticationServiceImpl implements AuthenticationService {
     private final TraineeDao traineeDao;
     private final TrainerDao trainerDao;
     private final UserDao userDao;
+    private final GymMetrics metrics;
 
     public AuthenticationServiceImpl(TraineeDao traineeDao,
                                      TrainerDao trainerDao,
-                                     UserDao userDao) {
+                                     UserDao userDao,
+                                     GymMetrics metrics) {
         this.traineeDao = traineeDao;
         this.trainerDao = trainerDao;
         this.userDao = userDao;
+        this.metrics = metrics;
     }
 
     @Override
@@ -43,6 +47,7 @@ public class AuthenticationServiceImpl implements AuthenticationService {
         if (trainee.isEmpty() || !passwordMatches(trainee.get().getUser(), credentials.password())) {
             throw failed(credentials.username());
         }
+        metrics.authenticationSucceeded();
         log.debug("Trainee {} authenticated", credentials.username());
         return trainee.get();
     }
@@ -54,6 +59,7 @@ public class AuthenticationServiceImpl implements AuthenticationService {
         if (trainer.isEmpty() || !passwordMatches(trainer.get().getUser(), credentials.password())) {
             throw failed(credentials.username());
         }
+        metrics.authenticationSucceeded();
         log.debug("Trainer {} authenticated", credentials.username());
         return trainer.get();
     }
@@ -65,6 +71,7 @@ public class AuthenticationServiceImpl implements AuthenticationService {
         if (user.isEmpty() || !passwordMatches(user.get(), credentials.password())) {
             throw failed(credentials.username());
         }
+        metrics.authenticationSucceeded();
         log.debug("User {} authenticated", credentials.username());
         return user.get();
     }
@@ -84,11 +91,13 @@ public class AuthenticationServiceImpl implements AuthenticationService {
 
     private void requireCredentials(Credentials credentials) {
         if (credentials == null || credentials.username() == null || credentials.password() == null) {
+            metrics.authenticationFailed();
             throw new AuthenticationFailedException(INVALID_CREDENTIALS);
         }
     }
 
     private AuthenticationFailedException failed(String username) {
+        metrics.authenticationFailed();
         log.warn("Authentication failed for username {}", username);
         return new AuthenticationFailedException(INVALID_CREDENTIALS);
     }

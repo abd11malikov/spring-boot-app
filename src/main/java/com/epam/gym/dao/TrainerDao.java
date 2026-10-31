@@ -14,5 +14,7 @@ public interface TrainerDao {
 
     List<Trainer> findAll();
 
+    long countActive();
+
     List<Trainer> findActiveNotAssignedToTrainee(String traineeUsername);
 }

@@ -11,8 +11,8 @@ public class PasswordGenerator {
     private final String characters;
     private final Random random;
 
-    public PasswordGenerator(@Value("${password.length}") int length,
-                             @Value("${password.characters}") String characters,
+    public PasswordGenerator(@Value("${gym.password.length}") int length,
+                             @Value("${gym.password.characters}") String characters,
                              Random random) {
         if (length <= 0) {
             throw new IllegalArgumentException("Password length must be positive");

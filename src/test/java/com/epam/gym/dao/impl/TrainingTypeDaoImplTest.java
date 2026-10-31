@@ -1,13 +1,10 @@
 package com.epam.gym.dao.impl;
 
-import com.epam.gym.config.AppConfig;
+import com.epam.gym.dao.DaoTest;
 import com.epam.gym.dao.TrainingTypeDao;
 import com.epam.gym.model.TrainingType;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.test.context.TestPropertySource;
-import org.springframework.test.context.junit.jupiter.SpringJUnitConfig;
-import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 import java.util.Optional;
@@ -16,9 +13,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-@SpringJUnitConfig(AppConfig.class)
-@TestPropertySource("classpath:application-test.properties")
-@Transactional
+@DaoTest
 class TrainingTypeDaoImplTest {
 
     @Autowired

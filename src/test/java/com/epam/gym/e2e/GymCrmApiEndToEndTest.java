@@ -1,25 +1,19 @@
 package com.epam.gym.e2e;
 
-import com.epam.gym.config.AppConfig;
-import com.epam.gym.web.config.WebConfig;
-import com.epam.gym.web.logging.RestCallLoggingFilter;
 import com.epam.gym.web.logging.TransactionIdFilter;
 import com.jayway.jsonpath.JsonPath;
-import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
+import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.test.annotation.DirtiesContext;
-import org.springframework.test.context.ContextConfiguration;
-import org.springframework.test.context.ContextHierarchy;
+import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.TestPropertySource;
-import org.springframework.test.context.junit.jupiter.web.SpringJUnitWebConfig;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.test.web.servlet.ResultActions;
-import org.springframework.test.web.servlet.setup.MockMvcBuilders;
-import org.springframework.web.context.WebApplicationContext;
 
 import java.nio.charset.StandardCharsets;
 import java.util.Base64;
@@ -37,28 +31,16 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-@SpringJUnitWebConfig
-@ContextHierarchy({
-        @ContextConfiguration(classes = AppConfig.class),
-        @ContextConfiguration(classes = WebConfig.class)
-})
-@TestPropertySource(locations = "classpath:application-test.properties", properties =
-        "db.url=jdbc:h2:mem:gym_crm_e2e;MODE=PostgreSQL;DATABASE_TO_LOWER=TRUE;DEFAULT_NULL_ORDERING=HIGH")
+@SpringBootTest
+@AutoConfigureMockMvc
+@ActiveProfiles("test")
+@TestPropertySource(properties =
+        "spring.datasource.url=jdbc:h2:mem:gym_crm_e2e;MODE=PostgreSQL;DATABASE_TO_LOWER=TRUE;DEFAULT_NULL_ORDERING=HIGH")
 @DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_CLASS)
 class GymCrmApiEndToEndTest {
 
     @Autowired
-    private WebApplicationContext webContext;
-
     private MockMvc mockMvc;
-
-    @BeforeEach
-    void setUp() {
-        mockMvc = MockMvcBuilders.webAppContextSetup(webContext)
-                .addFilter(new TransactionIdFilter())
-                .addFilter(new RestCallLoggingFilter(2000), "/api/*")
-                .build();
-    }
 
     @Test
     void traineeAndTrainerJourney_coversEveryEndpoint() throws Exception {

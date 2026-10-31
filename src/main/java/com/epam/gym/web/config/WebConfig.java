@@ -1,22 +1,19 @@
 package com.epam.gym.web.config;
 
 import com.epam.gym.web.auth.CredentialsArgumentResolver;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.SerializationFeature;
-import org.springframework.context.annotation.ComponentScan;
+import com.epam.gym.web.logging.RestCallLoggingFilter;
+import com.epam.gym.web.logging.TransactionIdFilter;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.web.servlet.FilterRegistrationBean;
+import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.http.converter.HttpMessageConverter;
-import org.springframework.http.converter.json.Jackson2ObjectMapperBuilder;
-import org.springframework.http.converter.json.MappingJackson2HttpMessageConverter;
+import org.springframework.core.Ordered;
 import org.springframework.web.method.support.HandlerMethodArgumentResolver;
-import org.springframework.web.servlet.config.annotation.EnableWebMvc;
 import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 
 import java.util.List;
 
 @Configuration
-@EnableWebMvc
-@ComponentScan("com.epam.gym.web")
 public class WebConfig implements WebMvcConfigurer {
 
     private final CredentialsArgumentResolver credentialsArgumentResolver;
@@ -30,18 +27,21 @@ public class WebConfig implements WebMvcConfigurer {
         resolvers.add(credentialsArgumentResolver);
     }
 
-    @Override
-    public void extendMessageConverters(List<HttpMessageConverter<?>> converters) {
-        for (HttpMessageConverter<?> converter : converters) {
-            if (converter instanceof MappingJackson2HttpMessageConverter jsonConverter) {
-                jsonConverter.setObjectMapper(createObjectMapper());
-            }
-        }
+    @Bean
+    public FilterRegistrationBean<TransactionIdFilter> transactionIdFilter() {
+        FilterRegistrationBean<TransactionIdFilter> registration = new FilterRegistrationBean<>(new TransactionIdFilter());
+        registration.addUrlPatterns("/*");
+        registration.setOrder(Ordered.HIGHEST_PRECEDENCE);
+        return registration;
     }
 
-    public static ObjectMapper createObjectMapper() {
-        return Jackson2ObjectMapperBuilder.json()
-                .featuresToDisable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS)
-                .build();
+    @Bean
+    public FilterRegistrationBean<RestCallLoggingFilter> restCallLoggingFilter(
+            @Value("${gym.rest-logging.max-body-length}") int maxBodyLength) {
+        FilterRegistrationBean<RestCallLoggingFilter> registration =
+                new FilterRegistrationBean<>(new RestCallLoggingFilter(maxBodyLength));
+        registration.addUrlPatterns("/api/*");
+        registration.setOrder(Ordered.HIGHEST_PRECEDENCE + 1);
+        return registration;
     }
 }

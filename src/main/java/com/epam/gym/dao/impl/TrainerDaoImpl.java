@@ -63,4 +63,13 @@ public class TrainerDaoImpl implements TrainerDao {
         log.debug("Found {} active trainers not assigned to trainee {}", trainers.size(), traineeUsername);
         return trainers;
     }
+
+    @Override
+    public long countActive() {
+        Long count = entityManager
+                .createQuery("SELECT COUNT(t) FROM Trainer t WHERE t.user.active = true", Long.class)
+                .getSingleResult();
+        log.debug("Counted {} active trainers", count);
+        return count;
+    }
 }

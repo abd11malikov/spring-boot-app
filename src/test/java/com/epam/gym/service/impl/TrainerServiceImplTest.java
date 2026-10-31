@@ -3,12 +3,14 @@ package com.epam.gym.service.impl;
 import com.epam.gym.dao.TrainerDao;
 import com.epam.gym.dao.TrainingTypeDao;
 import com.epam.gym.dto.Credentials;
+import com.epam.gym.monitoring.metrics.GymMetrics;
 import com.epam.gym.model.Trainer;
 import com.epam.gym.model.TrainingType;
 import com.epam.gym.model.User;
 import com.epam.gym.service.AuthenticationService;
 import com.epam.gym.util.PasswordGenerator;
 import com.epam.gym.util.UsernameGenerator;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -49,6 +51,8 @@ class TrainerServiceImplTest {
     @Mock
     private PasswordGenerator passwordGenerator;
 
+    private final SimpleMeterRegistry meterRegistry = new SimpleMeterRegistry();
+
     private TrainerServiceImpl trainerService;
 
     private final TrainingType yoga = new TrainingType("Yoga");
@@ -57,7 +61,8 @@ class TrainerServiceImplTest {
     @BeforeEach
     void setUp() {
         trainerService = new TrainerServiceImpl(
-                trainerDao, trainingTypeDao, authenticationService, usernameGenerator, passwordGenerator);
+                trainerDao, trainingTypeDao, authenticationService, usernameGenerator, passwordGenerator,
+                new GymMetrics(meterRegistry));
         nodira = trainer("Nodira", "Karimova", "Nodira.Karimova", yoga);
     }
 
@@ -79,6 +84,7 @@ class TrainerServiceImplTest {
         assertEquals("Nodira.Karimova", created.getUser().getUsername());
         assertEquals("sT7uV1wX3y", created.getUser().getPassword());
         assertTrue(created.getUser().isActive());
+        assertEquals(1.0, meterRegistry.get("gym.registrations").tag("role", "trainer").counter().count());
     }
 
     @Test

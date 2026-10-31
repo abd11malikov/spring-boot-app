@@ -2,7 +2,7 @@ package com.epam.gym.web.error;
 
 import com.epam.gym.exception.AccessDeniedException;
 import com.epam.gym.exception.AuthenticationFailedException;
-import com.epam.gym.web.config.WebConfig;
+import com.epam.gym.TestObjectMapper;
 import com.epam.gym.web.logging.TransactionIdFilter;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
@@ -44,7 +44,7 @@ class GlobalExceptionHandlerTest {
     void setUp() {
         mockMvc = MockMvcBuilders.standaloneSetup(new ThrowingController())
                 .setControllerAdvice(new GlobalExceptionHandler())
-                .setMessageConverters(new MappingJackson2HttpMessageConverter(WebConfig.createObjectMapper()))
+                .setMessageConverters(new MappingJackson2HttpMessageConverter(TestObjectMapper.create()))
                 .build();
     }
 

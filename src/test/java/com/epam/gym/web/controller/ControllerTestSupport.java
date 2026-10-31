@@ -1,7 +1,7 @@
 package com.epam.gym.web.controller;
 
 import com.epam.gym.web.auth.CredentialsArgumentResolver;
-import com.epam.gym.web.config.WebConfig;
+import com.epam.gym.TestObjectMapper;
 import com.epam.gym.web.error.GlobalExceptionHandler;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -14,7 +14,7 @@ import java.util.Base64;
 
 final class ControllerTestSupport {
 
-    static final ObjectMapper OBJECT_MAPPER = WebConfig.createObjectMapper();
+    static final ObjectMapper OBJECT_MAPPER = TestObjectMapper.create();
 
     private ControllerTestSupport() {
     }

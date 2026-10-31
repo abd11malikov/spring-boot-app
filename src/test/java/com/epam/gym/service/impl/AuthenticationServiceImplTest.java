@@ -5,10 +5,12 @@ import com.epam.gym.dao.TrainerDao;
 import com.epam.gym.dao.UserDao;
 import com.epam.gym.dto.Credentials;
 import com.epam.gym.exception.AuthenticationFailedException;
+import com.epam.gym.monitoring.metrics.GymMetrics;
 import com.epam.gym.model.Trainee;
 import com.epam.gym.model.Trainer;
 import com.epam.gym.model.TrainingType;
 import com.epam.gym.model.User;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -39,11 +41,13 @@ class AuthenticationServiceImplTest {
     @Mock
     private UserDao userDao;
 
+    private final SimpleMeterRegistry meterRegistry = new SimpleMeterRegistry();
+
     private AuthenticationServiceImpl authenticationService;
 
     @BeforeEach
     void setUp() {
-        authenticationService = new AuthenticationServiceImpl(traineeDao, trainerDao, userDao);
+        authenticationService = new AuthenticationServiceImpl(traineeDao, trainerDao, userDao, new GymMetrics(meterRegistry));
     }
 
     @Test
@@ -57,6 +61,7 @@ class AuthenticationServiceImplTest {
 
         // then
         assertSame(trainee, result);
+        assertEquals(1.0, authentications("success"));
     }
 
     @Test
@@ -71,6 +76,8 @@ class AuthenticationServiceImplTest {
 
         // then
         assertEquals(INVALID_CREDENTIALS, exception.getMessage());
+        assertEquals(1.0, authentications("failure"));
+        assertEquals(0.0, authentications("success"));
     }
 
     @Test
@@ -194,5 +201,9 @@ class AuthenticationServiceImplTest {
 
         // then
         assertEquals("New password is required", exception.getMessage());
+    }
+
+    private double authentications(String result) {
+        return meterRegistry.get("gym.authentications").tag("result", result).counter().count();
     }
 }

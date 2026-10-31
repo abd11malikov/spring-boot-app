@@ -4,6 +4,7 @@ import com.epam.gym.dao.TraineeDao;
 import com.epam.gym.dao.TrainerDao;
 import com.epam.gym.dto.Credentials;
 import com.epam.gym.exception.AuthenticationFailedException;
+import com.epam.gym.monitoring.metrics.GymMetrics;
 import com.epam.gym.model.Trainee;
 import com.epam.gym.model.Trainer;
 import com.epam.gym.model.TrainingType;
@@ -11,6 +12,7 @@ import com.epam.gym.model.User;
 import com.epam.gym.service.AuthenticationService;
 import com.epam.gym.util.PasswordGenerator;
 import com.epam.gym.util.UsernameGenerator;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -54,6 +56,8 @@ class TraineeServiceImplTest {
     @Mock
     private PasswordGenerator passwordGenerator;
 
+    private final SimpleMeterRegistry meterRegistry = new SimpleMeterRegistry();
+
     private TraineeServiceImpl traineeService;
 
     private Trainee john;
@@ -61,7 +65,8 @@ class TraineeServiceImplTest {
     @BeforeEach
     void setUp() {
         traineeService = new TraineeServiceImpl(
-                traineeDao, trainerDao, authenticationService, usernameGenerator, passwordGenerator);
+                traineeDao, trainerDao, authenticationService, usernameGenerator, passwordGenerator,
+                new GymMetrics(meterRegistry));
         john = trainee("John", "Smith", "John.Smith");
     }
 
@@ -81,6 +86,7 @@ class TraineeServiceImplTest {
         assertEquals("aB3dE5gH7j", created.getUser().getPassword());
         assertTrue(created.getUser().isActive());
         verify(traineeDao).create(trainee);
+        assertEquals(1.0, meterRegistry.get("gym.registrations").tag("role", "trainee").counter().count());
     }
 
     @Test
@@ -95,6 +101,7 @@ class TraineeServiceImplTest {
         // then
         assertEquals("First name is required", exception.getMessage());
         verify(traineeDao, never()).create(any());
+        assertEquals(0.0, meterRegistry.get("gym.registrations").tag("role", "trainee").counter().count());
     }
 
     @Test

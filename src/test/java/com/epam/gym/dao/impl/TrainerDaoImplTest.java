@@ -1,6 +1,6 @@
 package com.epam.gym.dao.impl;
 
-import com.epam.gym.config.AppConfig;
+import com.epam.gym.dao.DaoTest;
 import com.epam.gym.dao.TraineeDao;
 import com.epam.gym.dao.TrainerDao;
 import com.epam.gym.dao.TrainingTypeDao;
@@ -12,9 +12,6 @@ import jakarta.persistence.PersistenceContext;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.test.context.TestPropertySource;
-import org.springframework.test.context.junit.jupiter.SpringJUnitConfig;
-import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 import java.util.Optional;
@@ -24,9 +21,7 @@ import static com.epam.gym.TestEntities.trainer;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-@SpringJUnitConfig(AppConfig.class)
-@TestPropertySource("classpath:application-test.properties")
-@Transactional
+@DaoTest
 class TrainerDaoImplTest {
 
     @Autowired
@@ -62,6 +57,21 @@ class TrainerDaoImplTest {
         Trainer loaded = trainerDao.findById(created.getId()).orElseThrow();
         assertEquals("Yoga", loaded.getSpecialization().getTrainingTypeName());
         assertEquals("Nodira.Karimova", loaded.getUser().getUsername());
+    }
+
+    @Test
+    void countActive_countsOnlyActiveTrainers() {
+        // given
+        trainerDao.create(trainer("Nodira", "Karimova", "Nodira.Karimova", yoga));
+        Trainer inactive = trainer("Rustam", "Aliyev", "Rustam.Aliyev", yoga);
+        inactive.getUser().setActive(false);
+        trainerDao.create(inactive);
+
+        // when
+        long count = trainerDao.countActive();
+
+        // then
+        assertEquals(1, count);
     }
 
     @Test

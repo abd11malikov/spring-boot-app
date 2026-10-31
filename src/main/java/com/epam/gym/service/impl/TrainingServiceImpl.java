@@ -10,6 +10,7 @@ import com.epam.gym.model.Trainee;
 import com.epam.gym.model.Trainer;
 import com.epam.gym.model.Training;
 import com.epam.gym.model.User;
+import com.epam.gym.monitoring.metrics.GymMetrics;
 import com.epam.gym.service.AuthenticationService;
 import com.epam.gym.service.TrainingService;
 import org.slf4j.Logger;
@@ -34,15 +35,18 @@ public class TrainingServiceImpl implements TrainingService {
     private final TraineeDao traineeDao;
     private final TrainerDao trainerDao;
     private final AuthenticationService authenticationService;
+    private final GymMetrics metrics;
 
     public TrainingServiceImpl(TrainingDao trainingDao,
                                TraineeDao traineeDao,
                                TrainerDao trainerDao,
-                               AuthenticationService authenticationService) {
+                               AuthenticationService authenticationService,
+                               GymMetrics metrics) {
         this.trainingDao = trainingDao;
         this.traineeDao = traineeDao;
         this.trainerDao = trainerDao;
         this.authenticationService = authenticationService;
+        this.metrics = metrics;
     }
 
     @Override
@@ -70,6 +74,7 @@ public class TrainingServiceImpl implements TrainingService {
 
         trainee.getTrainings().add(training);
         trainee.getTrainers().add(trainer);
+        metrics.trainingAdded();
 
         log.info("Added training '{}' for trainee {} with trainer {}",
                 request.trainingName(), request.traineeUsername(), request.trainerUsername());
@@ -81,8 +86,8 @@ public class TrainingServiceImpl implements TrainingService {
     public List<Training> getTraineeTrainings(Credentials credentials, LocalDate fromDate, LocalDate toDate,
                                               String trainerUsername, String trainingTypeName) {
         authenticationService.authenticateTrainee(credentials);
-        List<Training> trainings = trainingDao.findTraineeTrainings(
-                credentials.username(), fromDate, toDate, trainerUsername, trainingTypeName);
+        List<Training> trainings = metrics.timeTraineeTrainingSearch(() -> trainingDao.findTraineeTrainings(
+                credentials.username(), fromDate, toDate, trainerUsername, trainingTypeName));
         log.info("Found {} trainings for trainee {}", trainings.size(), credentials.username());
         return trainings;
     }
@@ -92,8 +97,8 @@ public class TrainingServiceImpl implements TrainingService {
     public List<Training> getTrainerTrainings(Credentials credentials, LocalDate fromDate, LocalDate toDate,
                                               String traineeUsername) {
         authenticationService.authenticateTrainer(credentials);
-        List<Training> trainings = trainingDao.findTrainerTrainings(
-                credentials.username(), fromDate, toDate, traineeUsername);
+        List<Training> trainings = metrics.timeTrainerTrainingSearch(() -> trainingDao.findTrainerTrainings(
+                credentials.username(), fromDate, toDate, traineeUsername));
         log.info("Found {} trainings for trainer {}", trainings.size(), credentials.username());
         return trainings;
     }

@@ -1,12 +1,13 @@
 package com.epam.gym.web.dto;
 
-import com.epam.gym.web.config.WebConfig;
 import com.epam.gym.web.dto.request.UpdateTraineeRequest;
 import com.epam.gym.web.dto.response.RegistrationResponse;
 import com.epam.gym.web.dto.response.TraineeProfileResponse;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.autoconfigure.json.JsonTest;
 
 import java.time.LocalDate;
 import java.util.List;
@@ -15,9 +16,11 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+@JsonTest
 class JsonFormatTest {
 
-    private final ObjectMapper objectMapper = WebConfig.createObjectMapper();
+    @Autowired
+    private ObjectMapper objectMapper;
 
     @Test
     void profileResponse_writesIsActiveAndIsoDate() throws Exception {

@@ -1,20 +1,20 @@
-# Gym CRM — REST API
+# Gym CRM — Spring Boot
 
 REST API for a gym CRM system: trainees, trainers, their trainings and the trainer–trainee assignments.
-Built with **Spring Core + Spring MVC (no Spring Boot)**, Hibernate 6 and PostgreSQL, running on embedded Tomcat.
+Built with **Spring Boot 3.5**, Hibernate 6 and PostgreSQL, with Actuator health checks, Prometheus metrics
+and separate configuration per environment.
 
 ## Tech stack
 
 | Area | Technology |
 |---|---|
 | Language | Java 17 |
-| Framework | Spring Framework 6.2 (Core, MVC, ORM, Transactions) |
-| Web server | Embedded Apache Tomcat 10.1 |
+| Framework | Spring Boot 3.5 (Web, Data JPA, Validation, Actuator) |
 | Persistence | Hibernate 6.6 (JPA), HikariCP, PostgreSQL |
-| Validation | Jakarta Bean Validation (Hibernate Validator) |
+| Monitoring | Spring Boot Actuator, Micrometer, Prometheus |
 | API docs | OpenAPI 3 / Swagger UI (springdoc) |
 | Logging | SLF4J + Logback |
-| Tests | JUnit 5, Mockito, Spring MockMvc, H2 (in-memory) |
+| Tests | JUnit 5, Mockito, Spring Boot Test, MockMvc, H2 (in-memory) |
 
 ## Prerequisites
 
@@ -22,45 +22,97 @@ Built with **Spring Core + Spring MVC (no Spring Boot)**, Hibernate 6 and Postgr
 - Maven 3.9+ (or the one bundled with IntelliJ IDEA)
 - PostgreSQL (only to run the application; tests use H2)
 
-## Database setup
+## Environments (Spring profiles)
 
-Create the database and user the application expects:
+| Profile | Database | Credentials | Notes |
+|---|---|---|---|
+| `local` *(default)* | `gym_crm` on localhost | in `application-local.properties` | debug logging, SQL logging, Swagger on |
+| `dev` | `gym_crm_dev` on localhost | `DB_URL` / `DB_USERNAME` / `DB_PASSWORD`, with local defaults | debug logging |
+| `stg` | from environment | `DB_URL`, `DB_USERNAME`, `DB_PASSWORD` **required** | log file in `logs/` |
+| `prod` | from environment | `DB_URL`, `DB_USERNAME`, `DB_PASSWORD` **required** | log file in `logs/`, Swagger and health details off |
+
+Each environment also has its own connection-pool size, and every metric is tagged with its environment.
+`stg` and `prod` deliberately have **no default database settings**: if a variable is missing, the application
+refuses to start and names it:
+
+```
+The following properties were declared as required but could not be resolved: [DB_URL, DB_USERNAME, DB_PASSWORD]
+```
+
+## Database setup
 
 ```bash
 sudo -u postgres psql -c "CREATE USER gym_user WITH PASSWORD 'gym_pass';" -c "CREATE DATABASE gym_crm OWNER gym_user;"
 ```
 
-Tables and the constant list of training types are created automatically on startup by
-`src/main/resources/db/schema.sql` and `db/data.sql`. Hibernate only validates the schema (`hbm2ddl.auto=validate`).
+For the `dev` profile, also create its own database:
 
-## Configuration
+```bash
+sudo -u postgres psql -c "CREATE DATABASE gym_crm_dev OWNER gym_user;"
+```
 
-Settings live in `src/main/resources/application.properties`:
-
-| Property | Default | Meaning |
-|---|---|---|
-| `server.port` | `8080` | HTTP port |
-| `db.url`, `db.username`, `db.password` | local `gym_crm` database | PostgreSQL connection |
-| `password.length`, `password.characters` | `10`, letters and digits | Generated password format |
-| `logging.rest.max-body-length` | `2000` | Max characters of request/response body written to the log |
-
-Any property can be overridden with an environment variable, for example `DB_PASSWORD=secret` overrides `db.password`.
+Tables and the constant list of training types are created on startup from `src/main/resources/db/schema.sql`
+and `db/data.sql` (`spring.sql.init`). Hibernate only validates the schema.
 
 ## Running
 
 ```bash
-mvn compile exec:java
+mvn spring-boot:run
 ```
 
-Or run `com.epam.gym.GymCrmApplication` from the IDE. The API starts on `http://localhost:8080`.
+Starts with the `local` profile on `http://localhost:8080`. Another environment:
 
-**Swagger UI:** <http://localhost:8080/swagger-ui.html> — use the **Authorize** button to enter a username and password.
-The raw OpenAPI document is at `/v3/api-docs`.
+```bash
+mvn spring-boot:run -Dspring-boot.run.profiles=dev
+```
+
+Or build the executable jar and run it anywhere:
+
+```bash
+mvn clean package
+```
+
+```bash
+DB_URL=jdbc:postgresql://db-host:5432/gym_crm DB_USERNAME=gym DB_PASSWORD=secret java -jar target/spring-boot-app-1.0-SNAPSHOT.jar --spring.profiles.active=prod
+```
+
+**Swagger UI** (not in `prod`): <http://localhost:8080/swagger-ui.html> — use **Authorize** to log in.
+
+## Monitoring
+
+Actuator endpoints:
+
+| Endpoint | Content |
+|---|---|
+| `/actuator/health` | overall status and every health indicator |
+| `/actuator/info` | application description and Java version |
+| `/actuator/metrics` | all metric names |
+| `/actuator/prometheus` | all metrics in Prometheus format |
+
+**Custom health indicators**
+
+| Indicator | DOWN when |
+|---|---|
+| `trainingTypes` | the constant training types are missing (trainers can't be registered) |
+| `connectionPool` | requests are waiting for a database connection (pool exhausted) |
+| `memory` | heap usage is above `gym.health.memory.max-heap-usage` (default 90%) |
+
+**Custom Prometheus metrics** (all tagged with `application` and `environment`)
+
+| Metric | Type | Tags |
+|---|---|---|
+| `gym_registrations_total` | counter | `role` = trainee / trainer |
+| `gym_authentications_total` | counter | `result` = success / failure |
+| `gym_trainings_added_total` | counter | — |
+| `gym_trainings_search_seconds` | timer | `side` = trainee / trainer |
+| `gym_users_active` | gauge | `role` = trainee / trainer |
+
+`monitoring/prometheus.yml` is a ready-to-use scrape configuration for a Prometheus server.
 
 ## Authentication
 
 Registration endpoints are public and return the generated username and password.
-Every other endpoint requires **HTTP Basic** authentication:
+Every other API endpoint requires **HTTP Basic** authentication:
 
 ```bash
 curl -X POST http://localhost:8080/api/trainees \
@@ -126,17 +178,14 @@ Every error has the same JSON shape:
 
 ## Logging
 
-Two levels, as required:
-
-1. **Transaction level** — every request gets a transaction ID (taken from an incoming `X-Transaction-Id` header
+1. **Transaction level** — every request gets a transaction ID (from an incoming `X-Transaction-Id` header
    or generated). It appears in every log line of that request, in the `X-Transaction-Id` response header
-   and in error responses, so it can be passed to downstream services.
+   and in error responses.
 2. **REST call level** — one line per call with method, path, status, duration and request/response bodies.
    Passwords are masked (`"password":"****"`).
 
-```
-INFO [9b106831-…] RestCallLoggingFilter - REST POST /api/trainees -> 201 in 46 ms | request: {"firstName":"John","lastName":"Doe"} | response: {"username":"John.Doe","password":"****"}
-```
+Log levels are set per profile; `stg` and `prod` also write a rolling log file to `logs/gym-crm.log`
+(`logback-spring.xml`).
 
 ## Tests
 
@@ -144,25 +193,30 @@ INFO [9b106831-…] RestCallLoggingFilter - REST POST /api/trainees -> 201 in 46
 mvn test
 ```
 
-Runs 204 tests against an in-memory H2 database — no PostgreSQL needed:
+Runs 230 tests against an in-memory H2 database (`test` profile) — no PostgreSQL needed:
 
-- unit tests for services, generators, mappers, validation, filters and error handling (Mockito)
+- unit tests for services, generators, mappers, validation, filters, error handling, health indicators and metrics
+- profile tests: each environment's database settings, and `stg`/`prod` refusing to start without them
 - controller tests with standalone MockMvc
-- DAO tests against H2 with rollback after each test
+- DAO tests with `@DataJpaTest` (rolled back after each test)
+- `ActuatorEndpointsTest` — health, info and Prometheus output of the running application
 - `GymCrmApiEndToEndTest` — full flow through all 17 endpoints with real transactions
 
 ## Project structure
 
 ```
 src/main/java/com/epam/gym
-├── GymCrmApplication.java   starts the Spring contexts and embedded Tomcat
-├── config/                  root context: Spring, persistence, transactions
+├── GymCrmApplication.java   @SpringBootApplication entry point
+├── config/                  application beans, required-properties check for stg/prod
 ├── model/                   JPA entities
 ├── dao/                     data access (EntityManager, JPQL, Criteria API)
 ├── service/                 business logic, authentication, validation
+├── monitoring/
+│   ├── health/              custom health indicators
+│   └── metrics/             custom Micrometer metrics
 ├── dto/, exception/, util/  service-level types and helpers
-└── web/                     web context
-    ├── config/              Spring MVC, JSON and OpenAPI setup
+└── web/
+    ├── config/              Spring MVC, filters and OpenAPI setup
     ├── controller/          REST controllers
     ├── dto/                 request and response bodies
     ├── mapper/              entity ↔ DTO conversion
@@ -173,10 +227,10 @@ src/main/java/com/epam/gym
 
 ## Design notes
 
-- **Two Spring contexts:** the root context holds services and persistence; the web context (child) holds
-  controllers and Spring MVC. Services never depend on the web layer.
 - **Username cannot change:** it identifies the resource in the URL and is not part of any update body.
 - **One user, one role:** every registration creates a new user, which belongs to exactly one trainee or trainer.
 - **Trainer specialization is read-only** after registration; a training's type is the trainer's specialization.
 - **Deleting a trainee** also deletes their trainings and trainer assignments.
+- **Actuator endpoints are not behind HTTP Basic:** they serve monitoring systems, not users, and would normally
+  be protected at the network level (or with Spring Security in the next module).
 - **Passwords are stored as plain text** in this module; hashing comes with Spring Security.

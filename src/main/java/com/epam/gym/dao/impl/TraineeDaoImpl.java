@@ -57,4 +57,13 @@ public class TraineeDaoImpl implements TraineeDao {
         log.debug("Found {} trainees", trainees.size());
         return trainees;
     }
+
+    @Override
+    public long countActive() {
+        Long count = entityManager
+                .createQuery("SELECT COUNT(t) FROM Trainee t WHERE t.user.active = true", Long.class)
+                .getSingleResult();
+        log.debug("Counted {} active trainees", count);
+        return count;
+    }
 }

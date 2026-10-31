@@ -7,11 +7,13 @@ import com.epam.gym.dto.Credentials;
 import com.epam.gym.dto.TrainingRequest;
 import com.epam.gym.exception.AccessDeniedException;
 import com.epam.gym.exception.AuthenticationFailedException;
+import com.epam.gym.monitoring.metrics.GymMetrics;
 import com.epam.gym.model.Trainee;
 import com.epam.gym.model.Trainer;
 import com.epam.gym.model.Training;
 import com.epam.gym.model.TrainingType;
 import com.epam.gym.service.AuthenticationService;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -54,6 +56,8 @@ class TrainingServiceImplTest {
     @Mock
     private AuthenticationService authenticationService;
 
+    private final SimpleMeterRegistry meterRegistry = new SimpleMeterRegistry();
+
     private TrainingServiceImpl trainingService;
 
     private final TrainingType yoga = new TrainingType("Yoga");
@@ -62,7 +66,8 @@ class TrainingServiceImplTest {
 
     @BeforeEach
     void setUp() {
-        trainingService = new TrainingServiceImpl(trainingDao, traineeDao, trainerDao, authenticationService);
+        trainingService = new TrainingServiceImpl(trainingDao, traineeDao, trainerDao, authenticationService,
+                new GymMetrics(meterRegistry));
         john = trainee("John", "Smith", "John.Smith");
         nodira = trainer("Nodira", "Karimova", "Nodira.Karimova", yoga);
     }
@@ -85,6 +90,7 @@ class TrainingServiceImplTest {
         assertEquals(60, training.getTrainingDuration());
         assertTrue(john.getTrainers().contains(nodira));
         verify(trainingDao).create(training);
+        assertEquals(1.0, meterRegistry.get("gym.trainings.added").counter().count());
     }
 
     @Test
@@ -114,6 +120,7 @@ class TrainingServiceImplTest {
         // then
         assertEquals("Only the trainee or the trainer can add this training", exception.getMessage());
         verify(trainingDao, never()).create(any());
+        assertEquals(0.0, meterRegistry.get("gym.trainings.added").counter().count());
     }
 
     @Test
@@ -173,6 +180,7 @@ class TrainingServiceImplTest {
         // then
         assertEquals(trainings, result);
         verify(authenticationService).authenticateTrainee(TRAINEE_LOGIN);
+        assertEquals(1, meterRegistry.get("gym.trainings.search").tag("side", "trainee").timer().count());
     }
 
     @Test
