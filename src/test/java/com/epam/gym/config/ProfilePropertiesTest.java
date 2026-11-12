@@ -16,7 +16,7 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 
 class ProfilePropertiesTest {
 
-    private static final List<String> ENVIRONMENTS = List.of("local", "dev", "stg", "prod");
+    private static final List<String> ENVIRONMENTS = List.of("local", "dev", "stg", "prod", "docker");
 
     @Test
     void everyEnvironment_definesItsOwnDatabaseSettings() throws IOException {
@@ -52,11 +52,11 @@ class ProfilePropertiesTest {
     }
 
     @Test
-    void stgAndProd_takeDatabaseSettingsOnlyFromEnvironment() throws IOException {
+    void stgProdAndDocker_takeDatabaseSettingsOnlyFromEnvironment() throws IOException {
         // given
         List<String> keys = List.of("spring.datasource.url", "spring.datasource.username", "spring.datasource.password");
 
-        for (String environment : List.of("stg", "prod")) {
+        for (String environment : List.of("stg", "prod", "docker")) {
             // when
             Properties properties = load(environment);
 

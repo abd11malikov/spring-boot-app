@@ -45,6 +45,19 @@ class RequiredDatabasePropertiesInitializerTest {
     }
 
     @Test
+    void dockerProfile_withoutDatabaseVariables_failsValidation() {
+        // given
+        StaticApplicationContext context = contextWith(new MockEnvironment(), "docker");
+
+        // when
+        initializer.initialize(context);
+
+        // then
+        assertThrows(MissingRequiredPropertiesException.class,
+                () -> context.getEnvironment().validateRequiredProperties());
+    }
+
+    @Test
     void localProfile_requiresNothing() {
         // given
         StaticApplicationContext context = contextWith(new MockEnvironment(), "local");

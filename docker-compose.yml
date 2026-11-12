@@ -1,0 +1,50 @@
+# Gym CRM local container environment: the application and its PostgreSQL database.
+# Credentials are NOT stored here: Compose reads them from the environment or from a `.env` file
+# next to this file (copy .env.example to .env). Startup fails with a clear message if one is missing.
+name: gym-crm
+
+services:
+  db:
+    image: postgres:17-alpine
+    container_name: gym-crm-db
+    environment:
+      POSTGRES_DB: ${DB_NAME:-gym_crm}
+      POSTGRES_USER: ${DB_USERNAME:?DB_USERNAME must be set (see .env.example)}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD must be set (see .env.example)}
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks:
+      - gym-net
+    restart: unless-stopped
+
+  app:
+    build: .
+    image: gym-crm:1.0
+    container_name: gym-crm-app
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      SPRING_PROFILES_ACTIVE: docker
+      # "db" is the Compose service name, resolved by Docker's DNS on the gym-net network
+      DB_URL: jdbc:postgresql://db:5432/${DB_NAME:-gym_crm}
+      DB_USERNAME: ${DB_USERNAME:?DB_USERNAME must be set (see .env.example)}
+      DB_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD must be set (see .env.example)}
+    ports:
+      - "${APP_PORT:-8080}:8080"
+    networks:
+      - gym-net
+    restart: unless-stopped
+
+networks:
+  gym-net:
+    name: gym-net
+
+volumes:
+  db-data:
+    name: gym-crm-db-data

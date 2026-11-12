@@ -21,6 +21,7 @@ and separate configuration per environment.
 - JDK 17+
 - Maven 3.9+ (or the one bundled with IntelliJ IDEA)
 - PostgreSQL (only to run the application; tests use H2)
+- or just **Docker** with Compose v2 to run the application and database in containers
 
 ## Environments (Spring profiles)
 
@@ -30,9 +31,10 @@ and separate configuration per environment.
 | `dev` | `gym_crm_dev` on localhost | `DB_URL` / `DB_USERNAME` / `DB_PASSWORD`, with local defaults | debug logging |
 | `stg` | from environment | `DB_URL`, `DB_USERNAME`, `DB_PASSWORD` **required** | log file in `logs/` |
 | `prod` | from environment | `DB_URL`, `DB_USERNAME`, `DB_PASSWORD` **required** | log file in `logs/`, Swagger and health details off |
+| `docker` | the PostgreSQL container (host = service name `db`) | `DB_URL`, `DB_USERNAME`, `DB_PASSWORD` **required** | logs to stdout only — see [Running with Docker](#running-with-docker) |
 
 Each environment also has its own connection-pool size, and every metric is tagged with its environment.
-`stg` and `prod` deliberately have **no default database settings**: if a variable is missing, the application
+`stg`, `prod` and `docker` deliberately have **no default database settings**: if a variable is missing, the application
 refuses to start and names it:
 
 ```
@@ -77,6 +79,151 @@ DB_URL=jdbc:postgresql://db-host:5432/gym_crm DB_USERNAME=gym DB_PASSWORD=secret
 ```
 
 **Swagger UI** (not in `prod`): <http://localhost:8080/swagger-ui.html> — use **Authorize** to log in.
+
+## Running with Docker
+
+The application and PostgreSQL run in **separate containers** on a user-defined Docker network.
+Only Docker is needed on the host (no JDK, Maven or PostgreSQL).
+
+| File | Purpose |
+|---|---|
+| `Dockerfile` | multi-stage build: Maven + JDK 17 builds the jar, a JRE 17 image (multi-arch, so it also runs on Apple Silicon) runs it as a non-root user, with a `HEALTHCHECK` on `/actuator/health` |
+| `.dockerignore` | keeps `target/`, `.git/`, IDE files and `.env` out of the build context |
+| `docker-compose.yml` | `db` (PostgreSQL 17) and `app` services, the `gym-net` network and the `gym-crm-db-data` volume |
+| `.env.example` | template for the credentials and ports Compose reads at startup |
+| `application-docker.properties` | `docker` Spring profile: database settings **only** from `DB_URL`, `DB_USERNAME`, `DB_PASSWORD`, logs to stdout only |
+
+**Configuration.** No credentials are stored in the `Dockerfile`, the image or `docker-compose.yml`. They are passed at
+container startup as environment variables. Like `stg`/`prod`, the `docker` profile has no defaults and refuses to start
+if one is missing. The database host in `DB_URL` is the Compose service name `db` (or the container name with plain
+`docker run`), never `localhost` or an IP address.
+
+### Docker Compose (recommended)
+
+Create your `.env` from the template once and set a password:
+
+```bash
+cp .env.example .env
+```
+
+Build the image and start both containers in the background (the app waits until the database is healthy):
+
+```bash
+docker compose up -d --build
+```
+
+Check container status (`app` becomes `healthy` once Actuator reports `UP`):
+
+```bash
+docker compose ps
+```
+
+Health check:
+
+```bash
+curl http://localhost:8080/actuator/health
+```
+
+Logs (all application logs go to standard output):
+
+```bash
+docker compose logs -f app
+```
+
+```bash
+docker logs gym-crm-app
+```
+
+Shell inside the running container (the image has `sh` and `bash`):
+
+```bash
+docker exec -it gym-crm-app sh
+```
+
+Inspect the database directly:
+
+```bash
+docker exec -it gym-crm-db psql -U gym_user -d gym_crm -c "SELECT username, is_active FROM users;"
+```
+
+Stop / start / restart only the application (the database keeps running, data stays):
+
+```bash
+docker compose stop app
+```
+
+```bash
+docker compose start app
+```
+
+```bash
+docker compose restart app
+```
+
+Stop and remove everything (add `-v` to also delete the database volume):
+
+```bash
+docker compose down
+```
+
+### Plain Docker commands
+
+The same environment without Compose:
+
+```bash
+docker build -t gym-crm:1.0 .
+```
+
+```bash
+docker network create gym-net
+```
+
+```bash
+docker run -d --name gym-crm-db --network gym-net -e POSTGRES_DB=gym_crm -e POSTGRES_USER=gym_user -e POSTGRES_PASSWORD=change_me -v gym-crm-db-data-plain:/var/lib/postgresql/data postgres:17-alpine
+```
+
+```bash
+docker run -d --name gym-crm-app --network gym-net -p 8080:8080 -e SPRING_PROFILES_ACTIVE=docker -e DB_URL=jdbc:postgresql://gym-crm-db:5432/gym_crm -e DB_USERNAME=gym_user -e DB_PASSWORD=change_me gym-crm:1.0
+```
+
+```bash
+docker ps
+```
+
+```bash
+docker logs -f gym-crm-app
+```
+
+Clean up:
+
+```bash
+docker rm -f gym-crm-app gym-crm-db && docker network rm gym-net && docker volume rm gym-crm-db-data-plain
+```
+
+### Verifying store and retrieve
+
+Register a trainee (stored in PostgreSQL), read it back, restart the app container and read it again:
+
+```bash
+curl -s -X POST http://localhost:8080/api/trainees -H "Content-Type: application/json" -d '{"firstName":"John","lastName":"Doe","address":"Main St 1"}'
+# {"username":"John.Doe","password":"aB3dE5gH7j"}
+```
+
+```bash
+curl -s -u John.Doe:aB3dE5gH7j http://localhost:8080/api/trainees/John.Doe
+```
+
+```bash
+docker compose restart app
+```
+
+```bash
+curl -s -u John.Doe:aB3dE5gH7j http://localhost:8080/api/trainees/John.Doe
+```
+
+The profile is still returned after the restart: the application reconnected to the database container and the data
+lives in the `gym-crm-db-data` volume. HikariCP also recovers on its own when the **database** container is restarted
+(`docker compose restart db`): requests fail briefly while it is down, then succeed again without restarting the app.
 
 ## Monitoring
 
