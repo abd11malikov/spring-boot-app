@@ -14,7 +14,7 @@ class RequiredDatabasePropertiesInitializerTest {
     private final RequiredDatabasePropertiesInitializer initializer = new RequiredDatabasePropertiesInitializer();
 
     @Test
-    void prodProfile_withoutDatabaseVariables_failsValidationNamingThem() {
+    void prodProfile_withoutRequiredVariables_failsValidationNamingThem() {
         // given
         StaticApplicationContext context = contextWith(new MockEnvironment(), "prod");
 
@@ -25,16 +25,17 @@ class RequiredDatabasePropertiesInitializerTest {
 
         // then
         assertEquals("The following properties were declared as required but could not be resolved: "
-                + "[DB_URL, DB_USERNAME, DB_PASSWORD]", exception.getMessage());
+                + "[DB_URL, DB_USERNAME, DB_PASSWORD, JWT_SECRET]", exception.getMessage());
     }
 
     @Test
-    void stgProfile_withAllDatabaseVariables_passesValidation() {
+    void stgProfile_withAllRequiredVariables_passesValidation() {
         // given
         MockEnvironment environment = new MockEnvironment()
                 .withProperty("DB_URL", "jdbc:postgresql://db:5432/gym")
                 .withProperty("DB_USERNAME", "gym")
-                .withProperty("DB_PASSWORD", "secret");
+                .withProperty("DB_PASSWORD", "secret")
+                .withProperty("JWT_SECRET", "c2VjcmV0");
         StaticApplicationContext context = contextWith(environment, "stg");
 
         // when

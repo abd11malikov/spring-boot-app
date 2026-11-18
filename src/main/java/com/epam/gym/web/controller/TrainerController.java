@@ -1,6 +1,7 @@
 package com.epam.gym.web.controller;
 
 import com.epam.gym.dto.Credentials;
+import com.epam.gym.security.JwtService;
 import com.epam.gym.service.TrainerService;
 import com.epam.gym.service.TrainingService;
 import com.epam.gym.web.dto.request.ActivationRequest;
@@ -20,6 +21,7 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.HttpStatus;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -45,40 +47,44 @@ public class TrainerController {
     private final TrainingService trainingService;
     private final TrainerMapper trainerMapper;
     private final TrainingMapper trainingMapper;
+    private final JwtService jwtService;
 
     public TrainerController(TrainerService trainerService,
                              TrainingService trainingService,
                              TrainerMapper trainerMapper,
-                             TrainingMapper trainingMapper) {
+                             TrainingMapper trainingMapper,
+                             JwtService jwtService) {
         this.trainerService = trainerService;
         this.trainingService = trainingService;
         this.trainerMapper = trainerMapper;
         this.trainingMapper = trainingMapper;
+        this.jwtService = jwtService;
     }
 
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
     @SecurityRequirements
-    @Operation(summary = "Register a trainer", description = "Generates and returns the username and password")
+    @Operation(summary = "Register a trainer", description = "Generates the username and password and returns them with a bearer token")
     @ApiResponses({
             @ApiResponse(responseCode = "201", description = "Trainer registered"),
             @ApiResponse(responseCode = "400", description = "A required field is missing or invalid"),
             @ApiResponse(responseCode = "404", description = "Specialization not found")
     })
     public RegistrationResponse register(@Valid @RequestBody TrainerRegistrationRequest request) {
-        return trainerMapper.toRegistrationResponse(
-                trainerService.create(trainerMapper.toEntity(request), request.specializationId()));
+        Credentials credentials = trainerService.create(trainerMapper.toEntity(request), request.specializationId());
+        return new RegistrationResponse(credentials.username(), credentials.password(),
+                jwtService.generateToken(credentials.username()));
     }
 
     @GetMapping("/{username}")
     @Operation(summary = "Get trainer profile", description = "Available to any logged-in user")
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "Profile returned"),
-            @ApiResponse(responseCode = "401", description = "Missing or invalid credentials"),
+            @ApiResponse(responseCode = "401", description = "Missing, invalid, expired or revoked token"),
             @ApiResponse(responseCode = "404", description = "Trainer not found")
     })
-    public TrainerProfileResponse getProfile(Credentials credentials, @PathVariable String username) {
-        return trainerMapper.toProfileResponse(trainerService.selectByUsername(credentials, username));
+    public TrainerProfileResponse getProfile(@PathVariable String username) {
+        return trainerMapper.toProfileResponse(trainerService.selectByUsername(username));
     }
 
     @PutMapping("/{username}")
@@ -87,15 +93,15 @@ public class TrainerController {
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "Profile updated"),
             @ApiResponse(responseCode = "400", description = "A required field is missing or invalid"),
-            @ApiResponse(responseCode = "401", description = "Missing or invalid credentials"),
+            @ApiResponse(responseCode = "401", description = "Missing, invalid, expired or revoked token"),
             @ApiResponse(responseCode = "403", description = "Not your profile")
     })
-    public TrainerProfileResponse updateProfile(Credentials credentials,
+    public TrainerProfileResponse updateProfile(@AuthenticationPrincipal String currentUser,
                                                 @PathVariable String username,
                                                 @Valid @RequestBody UpdateTrainerRequest request) {
-        requireOwner(credentials, username);
+        requireOwner(currentUser, username);
         return trainerMapper.toProfileResponse(
-                trainerService.updateProfile(credentials, trainerMapper.toEntity(request)));
+                trainerService.updateProfile(currentUser, trainerMapper.toEntity(request)));
     }
 
     @PatchMapping("/{username}/status")
@@ -104,34 +110,34 @@ public class TrainerController {
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "Status changed"),
             @ApiResponse(responseCode = "400", description = "isActive is missing"),
-            @ApiResponse(responseCode = "401", description = "Missing or invalid credentials"),
+            @ApiResponse(responseCode = "401", description = "Missing, invalid, expired or revoked token"),
             @ApiResponse(responseCode = "403", description = "Not your profile"),
             @ApiResponse(responseCode = "409", description = "Trainer already has this status")
     })
-    public void setStatus(Credentials credentials,
+    public void setStatus(@AuthenticationPrincipal String currentUser,
                           @PathVariable String username,
                           @Valid @RequestBody ActivationRequest request) {
-        requireOwner(credentials, username);
-        trainerService.setActive(credentials, request.isActive());
+        requireOwner(currentUser, username);
+        trainerService.setActive(currentUser, request.isActive());
     }
 
     @GetMapping("/{username}/trainings")
     @Operation(summary = "Get trainer trainings", description = "All filters are optional")
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "Trainings returned"),
-            @ApiResponse(responseCode = "401", description = "Missing or invalid credentials"),
+            @ApiResponse(responseCode = "401", description = "Missing, invalid, expired or revoked token"),
             @ApiResponse(responseCode = "403", description = "Not your profile")
     })
     public List<TrainerTrainingResponse> getTrainings(
-            Credentials credentials,
+            @AuthenticationPrincipal String currentUser,
             @PathVariable String username,
             @Parameter(example = "2026-01-01") @RequestParam(required = false)
             @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate periodFrom,
             @Parameter(example = "2026-12-31") @RequestParam(required = false)
             @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate periodTo,
             @Parameter(description = "Trainee username") @RequestParam(required = false) String traineeName) {
-        requireOwner(credentials, username);
-        return trainingService.getTrainerTrainings(credentials, periodFrom, periodTo, traineeName)
+        requireOwner(currentUser, username);
+        return trainingService.getTrainerTrainings(currentUser, periodFrom, periodTo, traineeName)
                 .stream()
                 .map(trainingMapper::toTrainerTrainingResponse)
                 .toList();

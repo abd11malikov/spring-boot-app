@@ -5,7 +5,7 @@ import java.util.regex.Pattern;
 public final class SensitiveDataMasker {
 
     private static final Pattern PASSWORD_FIELD =
-            Pattern.compile("(\"(?:password|oldPassword|newPassword)\"\\s*:\\s*)\"(?:[^\"\\\\]|\\\\.)*(?:\"|$)");
+            Pattern.compile("(\"(?:password|oldPassword|newPassword|token)\"\\s*:\\s*)\"(?:[^\"\\\\]|\\\\.)*(?:\"|$)");
     private static final String MASK = "\"****\"";
 
     private SensitiveDataMasker() {

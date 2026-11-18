@@ -6,18 +6,28 @@ import com.epam.gym.model.Trainer;
 
 import java.util.List;
 
+/**
+ * Trainee operations. Except {@link #create}, every method acts on behalf of the already
+ * authenticated user {@code username}.
+ */
 public interface TraineeService {
-    Trainee create(Trainee trainee);
 
-    Trainee selectByUsername(Credentials credentials, String username);
+    /**
+     * Registers the trainee with a generated username and password.
+     *
+     * @return the generated username and the plain password (only its hash is stored)
+     */
+    Credentials create(Trainee trainee);
 
-    Trainee updateProfile(Credentials credentials, Trainee changes);
+    Trainee selectByUsername(String username);
 
-    void setActive(Credentials credentials, boolean active);
+    Trainee updateProfile(String username, Trainee changes);
 
-    void delete(Credentials credentials);
+    void setActive(String username, boolean active);
 
-    List<Trainer> getUnassignedTrainers(Credentials credentials);
+    void delete(String username);
 
-    List<Trainer> updateTrainers(Credentials credentials, List<String> trainerUsernames);
+    List<Trainer> getUnassignedTrainers(String username);
+
+    List<Trainer> updateTrainers(String username, List<String> trainerUsernames);
 }

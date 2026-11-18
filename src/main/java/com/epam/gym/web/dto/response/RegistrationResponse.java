@@ -1,6 +1,9 @@
 package com.epam.gym.web.dto.response;
 
-public record RegistrationResponse(String username, String password) {
+/**
+ * @param token bearer token to use right away instead of logging in
+ */
+public record RegistrationResponse(String username, String password, String token) {
 
     @Override
     public String toString() {

@@ -1,6 +1,5 @@
 package com.epam.gym.web.controller;
 
-import com.epam.gym.dto.Credentials;
 import com.epam.gym.dto.TrainingRequest;
 import com.epam.gym.service.TrainingService;
 import com.epam.gym.web.dto.request.AddTrainingRequest;
@@ -10,14 +9,13 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.ResultActions;
 
 import java.time.LocalDate;
 
-import static com.epam.gym.web.controller.ControllerTestSupport.basicAuth;
+import static com.epam.gym.web.controller.ControllerTestSupport.asUser;
 import static com.epam.gym.web.controller.ControllerTestSupport.json;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
@@ -27,7 +25,6 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @ExtendWith(MockitoExtension.class)
 class TrainingControllerTest {
 
-    private static final String JOHN_AUTH = basicAuth("John.Smith", "password12");
 
     @Mock
     private TrainingService trainingService;
@@ -47,13 +44,13 @@ class TrainingControllerTest {
 
         // when
         ResultActions result = mockMvc.perform(post("/api/trainings")
-                .header(HttpHeaders.AUTHORIZATION, JOHN_AUTH)
+                .with(asUser("John.Smith"))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(json(request)));
 
         // then
         result.andExpect(status().isOk());
-        verify(trainingService).addTraining(new Credentials("John.Smith", "password12"), new TrainingRequest(
+        verify(trainingService).addTraining("John.Smith", new TrainingRequest(
                 "John.Smith", "Nodira.Karimova", "Morning Yoga", LocalDate.of(2026, 11, 10), 60));
     }
 
@@ -65,7 +62,7 @@ class TrainingControllerTest {
 
         // when
         ResultActions result = mockMvc.perform(post("/api/trainings")
-                .header(HttpHeaders.AUTHORIZATION, JOHN_AUTH)
+                .with(asUser("John.Smith"))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(json(request)));
 

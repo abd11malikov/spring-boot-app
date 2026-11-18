@@ -2,12 +2,10 @@ package com.epam.gym.web.error;
 
 import com.epam.gym.exception.AccessDeniedException;
 import com.epam.gym.exception.AuthenticationFailedException;
-import com.epam.gym.web.logging.TransactionIdFilter;
 import com.fasterxml.jackson.databind.exc.InvalidFormatException;
 import jakarta.servlet.http.HttpServletRequest;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.slf4j.MDC;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -21,7 +19,6 @@ import org.springframework.web.method.annotation.MethodArgumentTypeMismatchExcep
 import org.springframework.web.servlet.NoHandlerFoundException;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
 
-import java.time.Instant;
 import java.util.Comparator;
 import java.util.List;
 import java.util.NoSuchElementException;
@@ -70,7 +67,7 @@ public class GlobalExceptionHandler {
         ResponseEntity<ErrorResponse> response =
                 build(HttpStatus.UNAUTHORIZED, exception.getMessage(), request, List.of());
         return ResponseEntity.status(response.getStatusCode())
-                .header(HttpHeaders.WWW_AUTHENTICATE, "Basic realm=\"gym-crm\"")
+                .header(HttpHeaders.WWW_AUTHENTICATE, "Bearer realm=\"gym-crm\"")
                 .body(response.getBody());
     }
 
@@ -121,8 +118,6 @@ public class GlobalExceptionHandler {
         if (status.is4xxClientError()) {
             log.debug("{} {} -> {} {}", request.getMethod(), request.getRequestURI(), status.value(), message);
         }
-        ErrorResponse body = new ErrorResponse(Instant.now(), status.value(), status.getReasonPhrase(), message,
-                request.getRequestURI(), MDC.get(TransactionIdFilter.MDC_KEY), violations);
-        return ResponseEntity.status(status).body(body);
+        return ResponseEntity.status(status).body(ErrorResponse.of(status, message, request.getRequestURI(), violations));
     }
 }

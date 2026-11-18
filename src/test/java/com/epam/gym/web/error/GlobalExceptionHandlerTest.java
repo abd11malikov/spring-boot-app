@@ -140,7 +140,7 @@ class GlobalExceptionHandlerTest {
     }
 
     @Test
-    void authenticationFailure_returns401WithBasicChallenge() throws Exception {
+    void authenticationFailure_returns401WithBearerChallenge() throws Exception {
         // given
         String url = "/test/unauthenticated";
 
@@ -149,7 +149,7 @@ class GlobalExceptionHandlerTest {
 
         // then
         result.andExpect(status().isUnauthorized())
-                .andExpect(header().string(HttpHeaders.WWW_AUTHENTICATE, "Basic realm=\"gym-crm\""))
+                .andExpect(header().string(HttpHeaders.WWW_AUTHENTICATE, "Bearer realm=\"gym-crm\""))
                 .andExpect(jsonPath("$.message").value("Invalid username or password"));
     }
 

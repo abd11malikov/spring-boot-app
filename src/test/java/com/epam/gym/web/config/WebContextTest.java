@@ -14,9 +14,7 @@ import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.test.web.servlet.ResultActions;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.nio.charset.StandardCharsets;
 import java.time.LocalDate;
-import java.util.Base64;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -64,8 +62,9 @@ class WebContextTest {
 
         // then
         result.andExpect(status().isUnauthorized())
-                .andExpect(header().string(HttpHeaders.WWW_AUTHENTICATE, "Basic realm=\"gym-crm\""))
-                .andExpect(jsonPath("$.status").value(401));
+                .andExpect(header().string(HttpHeaders.WWW_AUTHENTICATE, "Bearer realm=\"gym-crm\""))
+                .andExpect(jsonPath("$.status").value(401))
+                .andExpect(jsonPath("$.message").value("Missing bearer token"));
     }
 
     @Test
@@ -84,12 +83,13 @@ class WebContextTest {
     }
 
     @Test
-    void unknownUrl_returns404Json() throws Exception {
+    void unknownUrl_authenticated_returns404Json() throws Exception {
         // given
         String url = "/api/does-not-exist";
+        String authorization = registerTraineeAndGetAuthorization();
 
         // when
-        ResultActions result = mockMvc.perform(get(url));
+        ResultActions result = mockMvc.perform(get(url).header(HttpHeaders.AUTHORIZATION, authorization));
 
         // then
         result.andExpect(status().isNotFound())
@@ -109,7 +109,11 @@ class WebContextTest {
                 .andExpect(content().contentTypeCompatibleWith("application/json"))
                 .andExpect(jsonPath("$.info.title").value("Gym CRM REST API"))
                 .andExpect(jsonPath("$.paths['/api/training-types']").exists())
-                .andExpect(jsonPath("$.components.securitySchemes.basicAuth.scheme").value("basic"));
+                .andExpect(jsonPath("$.components.securitySchemes.basicAuth.scheme").value("basic"))
+                .andExpect(jsonPath("$.components.securitySchemes.bearerAuth.scheme").value("bearer"))
+                .andExpect(jsonPath("$.security[0].bearerAuth").exists())
+                .andExpect(jsonPath("$.paths['/api/auth/login'].get.security[0].basicAuth").exists())
+                .andExpect(jsonPath("$.paths['/api/auth/logout'].post").exists());
     }
 
     @Test
@@ -158,8 +162,7 @@ class WebContextTest {
                         .content("{\"firstName\":\"Web\",\"lastName\":\"Tester\"}"))
                 .andExpect(status().isCreated())
                 .andReturn();
-        var credentials = objectMapper.readTree(registration.getResponse().getContentAsString());
-        String token = credentials.get("username").asText() + ":" + credentials.get("password").asText();
-        return "Basic " + Base64.getEncoder().encodeToString(token.getBytes(StandardCharsets.UTF_8));
+        var response = objectMapper.readTree(registration.getResponse().getContentAsString());
+        return "Bearer " + response.get("token").asText();
     }
 }

@@ -1,6 +1,7 @@
 package com.epam.gym.web.controller;
 
 import com.epam.gym.dto.Credentials;
+import com.epam.gym.security.JwtService;
 import com.epam.gym.service.TraineeService;
 import com.epam.gym.service.TrainingService;
 import com.epam.gym.web.dto.request.ActivationRequest;
@@ -23,6 +24,7 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.HttpStatus;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
@@ -50,40 +52,45 @@ public class TraineeController {
     private final TraineeMapper traineeMapper;
     private final SummaryMapper summaryMapper;
     private final TrainingMapper trainingMapper;
+    private final JwtService jwtService;
 
     public TraineeController(TraineeService traineeService,
                              TrainingService trainingService,
                              TraineeMapper traineeMapper,
                              SummaryMapper summaryMapper,
-                             TrainingMapper trainingMapper) {
+                             TrainingMapper trainingMapper,
+                             JwtService jwtService) {
         this.traineeService = traineeService;
         this.trainingService = trainingService;
         this.traineeMapper = traineeMapper;
         this.summaryMapper = summaryMapper;
         this.trainingMapper = trainingMapper;
+        this.jwtService = jwtService;
     }
 
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
     @SecurityRequirements
-    @Operation(summary = "Register a trainee", description = "Generates and returns the username and password")
+    @Operation(summary = "Register a trainee", description = "Generates the username and password and returns them with a bearer token")
     @ApiResponses({
             @ApiResponse(responseCode = "201", description = "Trainee registered"),
             @ApiResponse(responseCode = "400", description = "A required field is missing or invalid")
     })
     public RegistrationResponse register(@Valid @RequestBody TraineeRegistrationRequest request) {
-        return traineeMapper.toRegistrationResponse(traineeService.create(traineeMapper.toEntity(request)));
+        Credentials credentials = traineeService.create(traineeMapper.toEntity(request));
+        return new RegistrationResponse(credentials.username(), credentials.password(),
+                jwtService.generateToken(credentials.username()));
     }
 
     @GetMapping("/{username}")
     @Operation(summary = "Get trainee profile", description = "Available to any logged-in user")
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "Profile returned"),
-            @ApiResponse(responseCode = "401", description = "Missing or invalid credentials"),
+            @ApiResponse(responseCode = "401", description = "Missing, invalid, expired or revoked token"),
             @ApiResponse(responseCode = "404", description = "Trainee not found")
     })
-    public TraineeProfileResponse getProfile(Credentials credentials, @PathVariable String username) {
-        return traineeMapper.toProfileResponse(traineeService.selectByUsername(credentials, username));
+    public TraineeProfileResponse getProfile(@PathVariable String username) {
+        return traineeMapper.toProfileResponse(traineeService.selectByUsername(username));
     }
 
     @PutMapping("/{username}")
@@ -91,27 +98,27 @@ public class TraineeController {
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "Profile updated"),
             @ApiResponse(responseCode = "400", description = "A required field is missing or invalid"),
-            @ApiResponse(responseCode = "401", description = "Missing or invalid credentials"),
+            @ApiResponse(responseCode = "401", description = "Missing, invalid, expired or revoked token"),
             @ApiResponse(responseCode = "403", description = "Not your profile")
     })
-    public TraineeProfileResponse updateProfile(Credentials credentials,
+    public TraineeProfileResponse updateProfile(@AuthenticationPrincipal String currentUser,
                                                 @PathVariable String username,
                                                 @Valid @RequestBody UpdateTraineeRequest request) {
-        requireOwner(credentials, username);
+        requireOwner(currentUser, username);
         return traineeMapper.toProfileResponse(
-                traineeService.updateProfile(credentials, traineeMapper.toEntity(request)));
+                traineeService.updateProfile(currentUser, traineeMapper.toEntity(request)));
     }
 
     @DeleteMapping("/{username}")
     @Operation(summary = "Delete trainee profile", description = "Also deletes the trainee's trainings")
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "Trainee deleted"),
-            @ApiResponse(responseCode = "401", description = "Missing or invalid credentials"),
+            @ApiResponse(responseCode = "401", description = "Missing, invalid, expired or revoked token"),
             @ApiResponse(responseCode = "403", description = "Not your profile")
     })
-    public void delete(Credentials credentials, @PathVariable String username) {
-        requireOwner(credentials, username);
-        traineeService.delete(credentials);
+    public void delete(@AuthenticationPrincipal String currentUser, @PathVariable String username) {
+        requireOwner(currentUser, username);
+        traineeService.delete(currentUser);
     }
 
     @PatchMapping("/{username}/status")
@@ -120,28 +127,28 @@ public class TraineeController {
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "Status changed"),
             @ApiResponse(responseCode = "400", description = "isActive is missing"),
-            @ApiResponse(responseCode = "401", description = "Missing or invalid credentials"),
+            @ApiResponse(responseCode = "401", description = "Missing, invalid, expired or revoked token"),
             @ApiResponse(responseCode = "403", description = "Not your profile"),
             @ApiResponse(responseCode = "409", description = "Trainee already has this status")
     })
-    public void setStatus(Credentials credentials,
+    public void setStatus(@AuthenticationPrincipal String currentUser,
                           @PathVariable String username,
                           @Valid @RequestBody ActivationRequest request) {
-        requireOwner(credentials, username);
-        traineeService.setActive(credentials, request.isActive());
+        requireOwner(currentUser, username);
+        traineeService.setActive(currentUser, request.isActive());
     }
 
     @GetMapping("/{username}/unassigned-trainers")
     @Operation(summary = "Get active trainers not assigned to the trainee")
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "Trainers returned"),
-            @ApiResponse(responseCode = "401", description = "Missing or invalid credentials"),
+            @ApiResponse(responseCode = "401", description = "Missing, invalid, expired or revoked token"),
             @ApiResponse(responseCode = "403", description = "Not your profile")
     })
-    public List<TrainerSummaryResponse> getUnassignedTrainers(Credentials credentials,
+    public List<TrainerSummaryResponse> getUnassignedTrainers(@AuthenticationPrincipal String currentUser,
                                                               @PathVariable String username) {
-        requireOwner(credentials, username);
-        return summaryMapper.toTrainerSummaries(traineeService.getUnassignedTrainers(credentials));
+        requireOwner(currentUser, username);
+        return summaryMapper.toTrainerSummaries(traineeService.getUnassignedTrainers(currentUser));
     }
 
     @PutMapping("/{username}/trainers")
@@ -149,27 +156,27 @@ public class TraineeController {
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "Trainers list updated"),
             @ApiResponse(responseCode = "400", description = "Trainers list is missing or contains a blank username"),
-            @ApiResponse(responseCode = "401", description = "Missing or invalid credentials"),
+            @ApiResponse(responseCode = "401", description = "Missing, invalid, expired or revoked token"),
             @ApiResponse(responseCode = "403", description = "Not your profile"),
             @ApiResponse(responseCode = "404", description = "A trainer was not found")
     })
-    public List<TrainerSummaryResponse> updateTrainers(Credentials credentials,
+    public List<TrainerSummaryResponse> updateTrainers(@AuthenticationPrincipal String currentUser,
                                                        @PathVariable String username,
                                                        @Valid @RequestBody UpdateTraineeTrainersRequest request) {
-        requireOwner(credentials, username);
+        requireOwner(currentUser, username);
         return summaryMapper.toTrainerSummaries(
-                traineeService.updateTrainers(credentials, request.trainerUsernames()));
+                traineeService.updateTrainers(currentUser, request.trainerUsernames()));
     }
 
     @GetMapping("/{username}/trainings")
     @Operation(summary = "Get trainee trainings", description = "All filters are optional")
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "Trainings returned"),
-            @ApiResponse(responseCode = "401", description = "Missing or invalid credentials"),
+            @ApiResponse(responseCode = "401", description = "Missing, invalid, expired or revoked token"),
             @ApiResponse(responseCode = "403", description = "Not your profile")
     })
     public List<TraineeTrainingResponse> getTrainings(
-            Credentials credentials,
+            @AuthenticationPrincipal String currentUser,
             @PathVariable String username,
             @Parameter(example = "2026-01-01") @RequestParam(required = false)
             @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate periodFrom,
@@ -177,8 +184,8 @@ public class TraineeController {
             @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate periodTo,
             @Parameter(description = "Trainer username") @RequestParam(required = false) String trainerName,
             @Parameter(example = "Yoga") @RequestParam(required = false) String trainingType) {
-        requireOwner(credentials, username);
-        return trainingService.getTraineeTrainings(credentials, periodFrom, periodTo, trainerName, trainingType)
+        requireOwner(currentUser, username);
+        return trainingService.getTraineeTrainings(currentUser, periodFrom, periodTo, trainerName, trainingType)
                 .stream()
                 .map(trainingMapper::toTraineeTrainingResponse)
                 .toList();

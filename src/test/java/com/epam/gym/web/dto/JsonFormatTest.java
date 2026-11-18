@@ -2,6 +2,7 @@ package com.epam.gym.web.dto;
 
 import com.epam.gym.web.dto.request.UpdateTraineeRequest;
 import com.epam.gym.web.dto.response.RegistrationResponse;
+import com.epam.gym.web.dto.response.TokenResponse;
 import com.epam.gym.web.dto.response.TraineeProfileResponse;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -67,14 +68,27 @@ class JsonFormatTest {
     }
 
     @Test
-    void registrationResponse_toString_hidesPassword() {
+    void registrationResponse_toString_hidesPasswordAndToken() {
         // given
-        RegistrationResponse response = new RegistrationResponse("John.Doe", "aB3dE5gH7j");
+        RegistrationResponse response = new RegistrationResponse("John.Doe", "aB3dE5gH7j", "header.payload.signature");
 
         // when
         String text = response.toString();
 
         // then
         assertFalse(text.contains("aB3dE5gH7j"));
+        assertFalse(text.contains("header.payload.signature"));
+    }
+
+    @Test
+    void tokenResponse_toString_hidesToken() {
+        // given
+        TokenResponse response = TokenResponse.bearer("header.payload.signature", 3600);
+
+        // when
+        String text = response.toString();
+
+        // then
+        assertFalse(text.contains("header.payload.signature"));
     }
 }

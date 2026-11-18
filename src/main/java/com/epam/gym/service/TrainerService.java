@@ -3,12 +3,22 @@ package com.epam.gym.service;
 import com.epam.gym.dto.Credentials;
 import com.epam.gym.model.Trainer;
 
+/**
+ * Trainer operations. Except {@link #create}, every method acts on behalf of the already
+ * authenticated user {@code username}.
+ */
 public interface TrainerService {
-    Trainer create(Trainer trainer, Long specializationId);
 
-    Trainer selectByUsername(Credentials credentials, String username);
+    /**
+     * Registers the trainer with a generated username and password.
+     *
+     * @return the generated username and the plain password (only its hash is stored)
+     */
+    Credentials create(Trainer trainer, Long specializationId);
 
-    Trainer updateProfile(Credentials credentials, Trainer changes);
+    Trainer selectByUsername(String username);
 
-    void setActive(Credentials credentials, boolean active);
+    Trainer updateProfile(String username, Trainer changes);
+
+    void setActive(String username, boolean active);
 }

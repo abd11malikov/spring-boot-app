@@ -4,7 +4,6 @@ import com.epam.gym.model.Trainee;
 import com.epam.gym.model.User;
 import com.epam.gym.web.dto.request.TraineeRegistrationRequest;
 import com.epam.gym.web.dto.request.UpdateTraineeRequest;
-import com.epam.gym.web.dto.response.RegistrationResponse;
 import com.epam.gym.web.dto.response.TraineeProfileResponse;
 import org.springframework.stereotype.Component;
 
@@ -31,10 +30,6 @@ public class TraineeMapper {
         trainee.setDateOfBirth(request.dateOfBirth());
         trainee.setAddress(request.address());
         return trainee;
-    }
-
-    public RegistrationResponse toRegistrationResponse(Trainee trainee) {
-        return new RegistrationResponse(trainee.getUser().getUsername(), trainee.getUser().getPassword());
     }
 
     public TraineeProfileResponse toProfileResponse(Trainee trainee) {

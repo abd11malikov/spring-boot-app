@@ -19,7 +19,6 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.ResultActions;
@@ -31,7 +30,7 @@ import java.util.NoSuchElementException;
 import static com.epam.gym.TestEntities.trainee;
 import static com.epam.gym.TestEntities.trainer;
 import static com.epam.gym.TestEntities.training;
-import static com.epam.gym.web.controller.ControllerTestSupport.basicAuth;
+import static com.epam.gym.web.controller.ControllerTestSupport.asUser;
 import static com.epam.gym.web.controller.ControllerTestSupport.json;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.ArgumentMatchers.any;
@@ -50,8 +49,6 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @ExtendWith(MockitoExtension.class)
 class TrainerControllerTest {
 
-    private static final Credentials NODIRA_LOGIN = new Credentials("Nodira.Karimova", "password12");
-    private static final String NODIRA_AUTH = basicAuth("Nodira.Karimova", "password12");
 
     @Mock
     private TrainerService trainerService;
@@ -67,7 +64,8 @@ class TrainerControllerTest {
     void setUp() {
         TrainingTypeMapper trainingTypeMapper = new TrainingTypeMapper();
         TrainerController controller = new TrainerController(trainerService, trainingService,
-                new TrainerMapper(new SummaryMapper(trainingTypeMapper), trainingTypeMapper), new TrainingMapper());
+                new TrainerMapper(new SummaryMapper(trainingTypeMapper), trainingTypeMapper), new TrainingMapper(),
+                ControllerTestSupport.JWT_SERVICE);
         mockMvc = ControllerTestSupport.mockMvc(controller);
 
         nodira = trainer("Nodira", "Karimova", "Nodira.Karimova", new TrainingType("Yoga"));
@@ -77,7 +75,8 @@ class TrainerControllerTest {
     void register_validRequest_passesSpecializationIdAndReturns201() throws Exception {
         // given
         TrainerRegistrationRequest request = new TrainerRegistrationRequest("Nodira", "Karimova", 2L);
-        when(trainerService.create(any(Trainer.class), eq(2L))).thenReturn(nodira);
+        when(trainerService.create(any(Trainer.class), eq(2L)))
+                .thenReturn(new Credentials("Nodira.Karimova", "password12"));
 
         // when
         ResultActions result = mockMvc.perform(post("/api/trainers")
@@ -87,7 +86,8 @@ class TrainerControllerTest {
         // then
         result.andExpect(status().isCreated())
                 .andExpect(jsonPath("$.username").value("Nodira.Karimova"))
-                .andExpect(jsonPath("$.password").value("password12"));
+                .andExpect(jsonPath("$.password").value("password12"))
+                .andExpect(jsonPath("$.token").isNotEmpty());
     }
 
     @Test
@@ -109,11 +109,11 @@ class TrainerControllerTest {
     void getProfile_returnsProfileWithTrainees() throws Exception {
         // given
         nodira.getTrainees().add(trainee("John", "Smith", "John.Smith"));
-        when(trainerService.selectByUsername(NODIRA_LOGIN, "Nodira.Karimova")).thenReturn(nodira);
+        when(trainerService.selectByUsername("Nodira.Karimova")).thenReturn(nodira);
 
         // when
         ResultActions result = mockMvc.perform(get("/api/trainers/Nodira.Karimova")
-                .header(HttpHeaders.AUTHORIZATION, NODIRA_AUTH));
+                .with(asUser("Nodira.Karimova")));
 
         // then
         result.andExpect(status().isOk())
@@ -126,18 +126,18 @@ class TrainerControllerTest {
     void updateProfile_ownProfile_passesNamesAndStatus() throws Exception {
         // given
         UpdateTrainerRequest request = new UpdateTrainerRequest("Nodira", "Aliyeva", true);
-        when(trainerService.updateProfile(eq(NODIRA_LOGIN), any(Trainer.class))).thenReturn(nodira);
+        when(trainerService.updateProfile(eq("Nodira.Karimova"), any(Trainer.class))).thenReturn(nodira);
 
         // when
         ResultActions result = mockMvc.perform(put("/api/trainers/Nodira.Karimova")
-                .header(HttpHeaders.AUTHORIZATION, NODIRA_AUTH)
+                .with(asUser("Nodira.Karimova"))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(json(request)));
 
         // then
         result.andExpect(status().isOk()).andExpect(jsonPath("$.username").value("Nodira.Karimova"));
         ArgumentCaptor<Trainer> changes = ArgumentCaptor.forClass(Trainer.class);
-        verify(trainerService).updateProfile(eq(NODIRA_LOGIN), changes.capture());
+        verify(trainerService).updateProfile(eq("Nodira.Karimova"), changes.capture());
         assertEquals("Aliyeva", changes.getValue().getUser().getLastName());
     }
 
@@ -148,7 +148,7 @@ class TrainerControllerTest {
 
         // when
         ResultActions result = mockMvc.perform(put("/api/trainers/Rustam.Aliyev")
-                .header(HttpHeaders.AUTHORIZATION, NODIRA_AUTH)
+                .with(asUser("Nodira.Karimova"))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(body));
 
@@ -181,13 +181,13 @@ class TrainerControllerTest {
 
         // when
         ResultActions result = mockMvc.perform(patch("/api/trainers/Nodira.Karimova/status")
-                .header(HttpHeaders.AUTHORIZATION, NODIRA_AUTH)
+                .with(asUser("Nodira.Karimova"))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(json(request)));
 
         // then
         result.andExpect(status().isOk());
-        verify(trainerService).setActive(NODIRA_LOGIN, false);
+        verify(trainerService).setActive("Nodira.Karimova", false);
     }
 
     @Test
@@ -195,12 +195,12 @@ class TrainerControllerTest {
         // given
         Training training = training(trainee("John", "Smith", "John.Smith"), nodira, new TrainingType("Yoga"),
                 "Morning Yoga", LocalDate.of(2026, 3, 10));
-        when(trainingService.getTrainerTrainings(NODIRA_LOGIN, LocalDate.of(2026, 3, 1), null, "John.Smith"))
+        when(trainingService.getTrainerTrainings("Nodira.Karimova", LocalDate.of(2026, 3, 1), null, "John.Smith"))
                 .thenReturn(List.of(training));
 
         // when
         ResultActions result = mockMvc.perform(get("/api/trainers/Nodira.Karimova/trainings")
-                .header(HttpHeaders.AUTHORIZATION, NODIRA_AUTH)
+                .with(asUser("Nodira.Karimova"))
                 .param("periodFrom", "2026-03-01")
                 .param("traineeName", "John.Smith"));
 

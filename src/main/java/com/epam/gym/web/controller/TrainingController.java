@@ -1,6 +1,5 @@
 package com.epam.gym.web.controller;
 
-import com.epam.gym.dto.Credentials;
 import com.epam.gym.service.TrainingService;
 import com.epam.gym.web.dto.request.AddTrainingRequest;
 import com.epam.gym.web.mapper.TrainingMapper;
@@ -9,6 +8,7 @@ import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -34,11 +34,12 @@ public class TrainingController {
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "Training added"),
             @ApiResponse(responseCode = "400", description = "A required field is missing or invalid"),
-            @ApiResponse(responseCode = "401", description = "Missing or invalid credentials"),
+            @ApiResponse(responseCode = "401", description = "Missing, invalid, expired or revoked token"),
             @ApiResponse(responseCode = "403", description = "Caller is neither the trainee nor the trainer"),
             @ApiResponse(responseCode = "404", description = "Trainee or trainer not found")
     })
-    public void addTraining(Credentials credentials, @Valid @RequestBody AddTrainingRequest request) {
-        trainingService.addTraining(credentials, trainingMapper.toServiceRequest(request));
+    public void addTraining(@AuthenticationPrincipal String currentUser,
+                            @Valid @RequestBody AddTrainingRequest request) {
+        trainingService.addTraining(currentUser, trainingMapper.toServiceRequest(request));
     }
 }

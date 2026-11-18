@@ -1,6 +1,5 @@
 package com.epam.gym.web.controller;
 
-import com.epam.gym.dto.Credentials;
 import com.epam.gym.model.TrainingType;
 import com.epam.gym.service.TrainingTypeService;
 import com.epam.gym.web.mapper.TrainingTypeMapper;
@@ -11,10 +10,10 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.ResultActions;
-import org.springframework.http.HttpHeaders;
 
 import java.util.List;
 
+import static com.epam.gym.web.controller.ControllerTestSupport.asUser;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -26,7 +25,6 @@ class TrainingTypeControllerTest {
     @Mock
     private TrainingTypeService trainingTypeService;
 
-    private static final Credentials LOGIN = new Credentials("John.Smith", "password12");
 
     private MockMvc mockMvc;
 
@@ -39,11 +37,11 @@ class TrainingTypeControllerTest {
     @Test
     void getTrainingTypes_returnsNameAndIdOfEachType() throws Exception {
         // given
-        when(trainingTypeService.findAll(LOGIN)).thenReturn(List.of(new TrainingType("Yoga"), new TrainingType("Cardio")));
+        when(trainingTypeService.findAll()).thenReturn(List.of(new TrainingType("Yoga"), new TrainingType("Cardio")));
 
         // when
         ResultActions result = mockMvc.perform(get("/api/training-types")
-                .header(HttpHeaders.AUTHORIZATION, ControllerTestSupport.basicAuth("John.Smith", "password12")));
+                .with(asUser("John.Smith")));
 
         // then
         result.andExpect(status().isOk())
@@ -55,11 +53,11 @@ class TrainingTypeControllerTest {
     @Test
     void getTrainingTypes_noTypes_returnsEmptyList() throws Exception {
         // given
-        when(trainingTypeService.findAll(LOGIN)).thenReturn(List.of());
+        when(trainingTypeService.findAll()).thenReturn(List.of());
 
         // when
         ResultActions result = mockMvc.perform(get("/api/training-types")
-                .header(HttpHeaders.AUTHORIZATION, ControllerTestSupport.basicAuth("John.Smith", "password12")));
+                .with(asUser("John.Smith")));
 
         // then
         result.andExpect(status().isOk())

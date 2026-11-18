@@ -3,15 +3,12 @@ package com.epam.gym.service.impl;
 import com.epam.gym.dao.TraineeDao;
 import com.epam.gym.dao.TrainerDao;
 import com.epam.gym.dao.TrainingDao;
-import com.epam.gym.dto.Credentials;
 import com.epam.gym.dto.TrainingRequest;
 import com.epam.gym.exception.AccessDeniedException;
 import com.epam.gym.model.Trainee;
 import com.epam.gym.model.Trainer;
 import com.epam.gym.model.Training;
-import com.epam.gym.model.User;
 import com.epam.gym.monitoring.metrics.GymMetrics;
-import com.epam.gym.service.AuthenticationService;
 import com.epam.gym.service.TrainingService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -34,26 +31,21 @@ public class TrainingServiceImpl implements TrainingService {
     private final TrainingDao trainingDao;
     private final TraineeDao traineeDao;
     private final TrainerDao trainerDao;
-    private final AuthenticationService authenticationService;
     private final GymMetrics metrics;
 
     public TrainingServiceImpl(TrainingDao trainingDao,
                                TraineeDao traineeDao,
                                TrainerDao trainerDao,
-                               AuthenticationService authenticationService,
                                GymMetrics metrics) {
         this.trainingDao = trainingDao;
         this.traineeDao = traineeDao;
         this.trainerDao = trainerDao;
-        this.authenticationService = authenticationService;
         this.metrics = metrics;
     }
 
     @Override
-    public Training addTraining(Credentials credentials, TrainingRequest request) {
+    public Training addTraining(String username, TrainingRequest request) {
         validate(request);
-        User user = authenticationService.authenticateUser(credentials);
-        String username = user.getUsername();
         if (!username.equals(request.traineeUsername()) && !username.equals(request.trainerUsername())) {
             throw new AccessDeniedException("Only the trainee or the trainer can add this training");
         }
@@ -83,23 +75,27 @@ public class TrainingServiceImpl implements TrainingService {
 
     @Override
     @Transactional(readOnly = true)
-    public List<Training> getTraineeTrainings(Credentials credentials, LocalDate fromDate, LocalDate toDate,
+    public List<Training> getTraineeTrainings(String username, LocalDate fromDate, LocalDate toDate,
                                               String trainerUsername, String trainingTypeName) {
-        authenticationService.authenticateTrainee(credentials);
+        if (traineeDao.findByUsername(username).isEmpty()) {
+            throw new NoSuchElementException("Trainee " + username + " not found");
+        }
         List<Training> trainings = metrics.timeTraineeTrainingSearch(() -> trainingDao.findTraineeTrainings(
-                credentials.username(), fromDate, toDate, trainerUsername, trainingTypeName));
-        log.info("Found {} trainings for trainee {}", trainings.size(), credentials.username());
+                username, fromDate, toDate, trainerUsername, trainingTypeName));
+        log.info("Found {} trainings for trainee {}", trainings.size(), username);
         return trainings;
     }
 
     @Override
     @Transactional(readOnly = true)
-    public List<Training> getTrainerTrainings(Credentials credentials, LocalDate fromDate, LocalDate toDate,
+    public List<Training> getTrainerTrainings(String username, LocalDate fromDate, LocalDate toDate,
                                               String traineeUsername) {
-        authenticationService.authenticateTrainer(credentials);
+        if (trainerDao.findByUsername(username).isEmpty()) {
+            throw new NoSuchElementException("Trainer " + username + " not found");
+        }
         List<Training> trainings = metrics.timeTrainerTrainingSearch(() -> trainingDao.findTrainerTrainings(
-                credentials.username(), fromDate, toDate, traineeUsername));
-        log.info("Found {} trainings for trainer {}", trainings.size(), credentials.username());
+                username, fromDate, toDate, traineeUsername));
+        log.info("Found {} trainings for trainer {}", trainings.size(), username);
         return trainings;
     }
 

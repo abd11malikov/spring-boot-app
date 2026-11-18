@@ -5,7 +5,6 @@ import com.epam.gym.model.Trainee;
 import com.epam.gym.model.Trainer;
 import com.epam.gym.model.Training;
 import com.epam.gym.model.TrainingType;
-import com.epam.gym.model.User;
 import com.epam.gym.service.TraineeService;
 import com.epam.gym.service.TrainingService;
 import com.epam.gym.web.dto.request.ActivationRequest;
@@ -16,15 +15,16 @@ import com.epam.gym.web.mapper.SummaryMapper;
 import com.epam.gym.web.mapper.TraineeMapper;
 import com.epam.gym.web.mapper.TrainingMapper;
 import com.epam.gym.web.mapper.TrainingTypeMapper;
+import com.jayway.jsonpath.JsonPath;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.test.web.servlet.ResultActions;
 
 import java.time.LocalDate;
@@ -34,7 +34,7 @@ import java.util.NoSuchElementException;
 import static com.epam.gym.TestEntities.trainee;
 import static com.epam.gym.TestEntities.trainer;
 import static com.epam.gym.TestEntities.training;
-import static com.epam.gym.web.controller.ControllerTestSupport.basicAuth;
+import static com.epam.gym.web.controller.ControllerTestSupport.asUser;
 import static com.epam.gym.web.controller.ControllerTestSupport.json;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -57,8 +57,6 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @ExtendWith(MockitoExtension.class)
 class TraineeControllerTest {
 
-    private static final Credentials JOHN_LOGIN = new Credentials("John.Smith", "password12");
-    private static final String JOHN_AUTH = basicAuth("John.Smith", "password12");
 
     @Mock
     private TraineeService traineeService;
@@ -75,7 +73,7 @@ class TraineeControllerTest {
     void setUp() {
         SummaryMapper summaryMapper = new SummaryMapper(new TrainingTypeMapper());
         TraineeController controller = new TraineeController(traineeService, trainingService,
-                new TraineeMapper(summaryMapper), summaryMapper, new TrainingMapper());
+                new TraineeMapper(summaryMapper), summaryMapper, new TrainingMapper(), ControllerTestSupport.JWT_SERVICE);
         mockMvc = ControllerTestSupport.mockMvc(controller);
 
         john = trainee("John", "Smith", "John.Smith");
@@ -83,21 +81,24 @@ class TraineeControllerTest {
     }
 
     @Test
-    void register_validRequest_returns201WithCredentials() throws Exception {
+    void register_validRequest_returns201WithCredentialsAndToken() throws Exception {
         // given
         TraineeRegistrationRequest request =
                 new TraineeRegistrationRequest("John", "Smith", LocalDate.of(2000, 1, 1), "Tashkent");
-        when(traineeService.create(any(Trainee.class))).thenReturn(john);
+        when(traineeService.create(any(Trainee.class))).thenReturn(new Credentials("John.Smith", "password12"));
 
         // when
-        ResultActions result = mockMvc.perform(post("/api/trainees")
-                .contentType(MediaType.APPLICATION_JSON)
-                .content(json(request)));
+        MvcResult result = mockMvc.perform(post("/api/trainees")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json(request)))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.username").value("John.Smith"))
+                .andExpect(jsonPath("$.password").value("password12"))
+                .andReturn();
 
         // then
-        result.andExpect(status().isCreated())
-                .andExpect(jsonPath("$.username").value("John.Smith"))
-                .andExpect(jsonPath("$.password").value("password12"));
+        String token = JsonPath.read(result.getResponse().getContentAsString(), "$.token");
+        assertEquals("John.Smith", ControllerTestSupport.JWT_SERVICE.parse(token).username());
     }
 
     @Test
@@ -119,11 +120,11 @@ class TraineeControllerTest {
     void getProfile_returnsProfileWithTrainers() throws Exception {
         // given
         john.getTrainers().add(nodira);
-        when(traineeService.selectByUsername(JOHN_LOGIN, "John.Smith")).thenReturn(john);
+        when(traineeService.selectByUsername("John.Smith")).thenReturn(john);
 
         // when
         ResultActions result = mockMvc.perform(get("/api/trainees/John.Smith")
-                .header(HttpHeaders.AUTHORIZATION, JOHN_AUTH));
+                .with(asUser("John.Smith")));
 
         // then
         result.andExpect(status().isOk())
@@ -135,28 +136,14 @@ class TraineeControllerTest {
     }
 
     @Test
-    void getProfile_withoutAuthorizationHeader_returns401() throws Exception {
-        // given
-        String url = "/api/trainees/John.Smith";
-
-        // when
-        ResultActions result = mockMvc.perform(get(url));
-
-        // then
-        result.andExpect(status().isUnauthorized())
-                .andExpect(jsonPath("$.message").value("Missing or invalid Authorization header"));
-        verifyNoInteractions(traineeService);
-    }
-
-    @Test
     void getProfile_unknownTrainee_returns404() throws Exception {
         // given
-        when(traineeService.selectByUsername(JOHN_LOGIN, "Nobody.Here"))
+        when(traineeService.selectByUsername("Nobody.Here"))
                 .thenThrow(new NoSuchElementException("Trainee Nobody.Here not found"));
 
         // when
         ResultActions result = mockMvc.perform(get("/api/trainees/Nobody.Here")
-                .header(HttpHeaders.AUTHORIZATION, JOHN_AUTH));
+                .with(asUser("John.Smith")));
 
         // then
         result.andExpect(status().isNotFound())
@@ -167,18 +154,18 @@ class TraineeControllerTest {
     void updateProfile_ownProfile_passesChangesToService() throws Exception {
         // given
         UpdateTraineeRequest request = new UpdateTraineeRequest("Johnny", "Smith", null, "Samarkand", false);
-        when(traineeService.updateProfile(eq(JOHN_LOGIN), any(Trainee.class))).thenReturn(john);
+        when(traineeService.updateProfile(eq("John.Smith"), any(Trainee.class))).thenReturn(john);
 
         // when
         ResultActions result = mockMvc.perform(put("/api/trainees/John.Smith")
-                .header(HttpHeaders.AUTHORIZATION, JOHN_AUTH)
+                .with(asUser("John.Smith"))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(json(request)));
 
         // then
         result.andExpect(status().isOk()).andExpect(jsonPath("$.username").value("John.Smith"));
         ArgumentCaptor<Trainee> changes = ArgumentCaptor.forClass(Trainee.class);
-        verify(traineeService).updateProfile(eq(JOHN_LOGIN), changes.capture());
+        verify(traineeService).updateProfile(eq("John.Smith"), changes.capture());
         assertEquals("Johnny", changes.getValue().getUser().getFirstName());
         assertEquals("Samarkand", changes.getValue().getAddress());
         assertFalse(changes.getValue().getUser().isActive());
@@ -191,7 +178,7 @@ class TraineeControllerTest {
 
         // when
         ResultActions result = mockMvc.perform(put("/api/trainees/John.Smith")
-                .header(HttpHeaders.AUTHORIZATION, JOHN_AUTH)
+                .with(asUser("John.Smith"))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(body));
 
@@ -208,7 +195,7 @@ class TraineeControllerTest {
 
         // when
         ResultActions result = mockMvc.perform(put("/api/trainees/Jane.Doe")
-                .header(HttpHeaders.AUTHORIZATION, JOHN_AUTH)
+                .with(asUser("John.Smith"))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(body));
 
@@ -224,22 +211,22 @@ class TraineeControllerTest {
         String url = "/api/trainees/John.Smith";
 
         // when
-        ResultActions result = mockMvc.perform(delete(url).header(HttpHeaders.AUTHORIZATION, JOHN_AUTH));
+        ResultActions result = mockMvc.perform(delete(url).with(asUser("John.Smith")));
 
         // then
         result.andExpect(status().isOk());
-        verify(traineeService).delete(JOHN_LOGIN);
+        verify(traineeService).delete("John.Smith");
     }
 
     @Test
     void setStatus_sameStatusTwice_returns409() throws Exception {
         // given
         doThrow(new IllegalStateException("Trainee John.Smith is already active"))
-                .when(traineeService).setActive(JOHN_LOGIN, true);
+                .when(traineeService).setActive("John.Smith", true);
 
         // when
         ResultActions result = mockMvc.perform(patch("/api/trainees/John.Smith/status")
-                .header(HttpHeaders.AUTHORIZATION, JOHN_AUTH)
+                .with(asUser("John.Smith"))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(json(new ActivationRequest(true))));
 
@@ -255,23 +242,23 @@ class TraineeControllerTest {
 
         // when
         ResultActions result = mockMvc.perform(patch("/api/trainees/John.Smith/status")
-                .header(HttpHeaders.AUTHORIZATION, JOHN_AUTH)
+                .with(asUser("John.Smith"))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(json(request)));
 
         // then
         result.andExpect(status().isOk());
-        verify(traineeService).setActive(JOHN_LOGIN, false);
+        verify(traineeService).setActive("John.Smith", false);
     }
 
     @Test
     void getUnassignedTrainers_returnsTrainerSummaries() throws Exception {
         // given
-        when(traineeService.getUnassignedTrainers(JOHN_LOGIN)).thenReturn(List.of(nodira));
+        when(traineeService.getUnassignedTrainers("John.Smith")).thenReturn(List.of(nodira));
 
         // when
         ResultActions result = mockMvc.perform(get("/api/trainees/John.Smith/unassigned-trainers")
-                .header(HttpHeaders.AUTHORIZATION, JOHN_AUTH));
+                .with(asUser("John.Smith")));
 
         // then
         result.andExpect(status().isOk())
@@ -284,11 +271,11 @@ class TraineeControllerTest {
     void updateTrainers_returnsNewTrainersList() throws Exception {
         // given
         UpdateTraineeTrainersRequest request = new UpdateTraineeTrainersRequest(List.of("Nodira.Karimova"));
-        when(traineeService.updateTrainers(JOHN_LOGIN, List.of("Nodira.Karimova"))).thenReturn(List.of(nodira));
+        when(traineeService.updateTrainers("John.Smith", List.of("Nodira.Karimova"))).thenReturn(List.of(nodira));
 
         // when
         ResultActions result = mockMvc.perform(put("/api/trainees/John.Smith/trainers")
-                .header(HttpHeaders.AUTHORIZATION, JOHN_AUTH)
+                .with(asUser("John.Smith"))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(json(request)));
 
@@ -301,12 +288,12 @@ class TraineeControllerTest {
     void getTrainings_passesQueryParametersToService() throws Exception {
         // given
         Training training = training(john, nodira, new TrainingType("Yoga"), "Morning Yoga", LocalDate.of(2026, 3, 10));
-        when(trainingService.getTraineeTrainings(JOHN_LOGIN, LocalDate.of(2026, 3, 1), LocalDate.of(2026, 3, 31),
+        when(trainingService.getTraineeTrainings("John.Smith", LocalDate.of(2026, 3, 1), LocalDate.of(2026, 3, 31),
                 "Nodira.Karimova", "Yoga")).thenReturn(List.of(training));
 
         // when
         ResultActions result = mockMvc.perform(get("/api/trainees/John.Smith/trainings")
-                .header(HttpHeaders.AUTHORIZATION, JOHN_AUTH)
+                .with(asUser("John.Smith"))
                 .param("periodFrom", "2026-03-01")
                 .param("periodTo", "2026-03-31")
                 .param("trainerName", "Nodira.Karimova")
@@ -324,11 +311,11 @@ class TraineeControllerTest {
     @Test
     void getTrainings_withoutFilters_passesNulls() throws Exception {
         // given
-        when(trainingService.getTraineeTrainings(JOHN_LOGIN, null, null, null, null)).thenReturn(List.of());
+        when(trainingService.getTraineeTrainings("John.Smith", null, null, null, null)).thenReturn(List.of());
 
         // when
         ResultActions result = mockMvc.perform(get("/api/trainees/John.Smith/trainings")
-                .header(HttpHeaders.AUTHORIZATION, JOHN_AUTH));
+                .with(asUser("John.Smith")));
 
         // then
         result.andExpect(status().isOk()).andExpect(jsonPath("$.length()").value(0));
@@ -338,7 +325,7 @@ class TraineeControllerTest {
     void register_newTraineeHasNoUsernameBeforeService() throws Exception {
         // given
         TraineeRegistrationRequest request = new TraineeRegistrationRequest("John", "Smith", null, null);
-        when(traineeService.create(any(Trainee.class))).thenReturn(new Trainee(userWithCredentials()));
+        when(traineeService.create(any(Trainee.class))).thenReturn(new Credentials("John.Smith", "password12"));
 
         // when
         mockMvc.perform(post("/api/trainees").contentType(MediaType.APPLICATION_JSON).content(json(request)));
@@ -347,12 +334,5 @@ class TraineeControllerTest {
         ArgumentCaptor<Trainee> created = ArgumentCaptor.forClass(Trainee.class);
         verify(traineeService).create(created.capture());
         assertNull(created.getValue().getUser().getUsername());
-    }
-
-    private User userWithCredentials() {
-        User user = new User("John", "Smith");
-        user.setUsername("John.Smith");
-        user.setPassword("password12");
-        return user;
     }
 }

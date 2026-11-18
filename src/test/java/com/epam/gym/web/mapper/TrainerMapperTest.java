@@ -4,7 +4,6 @@ import com.epam.gym.model.Trainer;
 import com.epam.gym.model.TrainingType;
 import com.epam.gym.web.dto.request.TrainerRegistrationRequest;
 import com.epam.gym.web.dto.request.UpdateTrainerRequest;
-import com.epam.gym.web.dto.response.RegistrationResponse;
 import com.epam.gym.web.dto.response.TrainerProfileResponse;
 import org.junit.jupiter.api.Test;
 
@@ -47,19 +46,6 @@ class TrainerMapperTest {
         // then
         assertEquals("Aliyeva", trainer.getUser().getLastName());
         assertFalse(trainer.getUser().isActive());
-    }
-
-    @Test
-    void toRegistrationResponse_returnsGeneratedCredentials() {
-        // given
-        Trainer trainer = trainer("Nodira", "Karimova", "Nodira.Karimova", new TrainingType("Yoga"));
-
-        // when
-        RegistrationResponse response = trainerMapper.toRegistrationResponse(trainer);
-
-        // then
-        assertEquals("Nodira.Karimova", response.username());
-        assertEquals("password12", response.password());
     }
 
     @Test

@@ -1,6 +1,5 @@
 package com.epam.gym.web.auth;
 
-import com.epam.gym.dto.Credentials;
 import com.epam.gym.exception.AccessDeniedException;
 import org.junit.jupiter.api.Test;
 
@@ -10,7 +9,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 
 class AccessGuardTest {
 
-    private static final Credentials LOGIN = new Credentials("John.Doe", "secret");
+    private static final String CURRENT_USER = "John.Doe";
 
     @Test
     void requireOwner_sameUsername_passes() {
@@ -18,7 +17,7 @@ class AccessGuardTest {
         String username = "John.Doe";
 
         // when / then
-        assertDoesNotThrow(() -> AccessGuard.requireOwner(LOGIN, username));
+        assertDoesNotThrow(() -> AccessGuard.requireOwner(CURRENT_USER, username));
     }
 
     @Test
@@ -28,9 +27,15 @@ class AccessGuardTest {
 
         // when
         AccessDeniedException exception = assertThrows(AccessDeniedException.class,
-                () -> AccessGuard.requireOwner(LOGIN, username));
+                () -> AccessGuard.requireOwner(CURRENT_USER, username));
 
         // then
         assertEquals("You can only access your own profile", exception.getMessage());
+    }
+
+    @Test
+    void requireOwner_noCurrentUser_throwsAccessDenied() {
+        // when / then
+        assertThrows(AccessDeniedException.class, () -> AccessGuard.requireOwner(null, "John.Doe"));
     }
 }

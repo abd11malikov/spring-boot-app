@@ -48,9 +48,11 @@ class GymCrmApiEndToEndTest {
         Account trainer = registerTrainer("Nodira", "Karimova", trainingTypeId("Yoga"));
         Account trainee = registerTrainee("John", "Doe");
 
-        // when / then: login works only with the right password
-        mockMvc.perform(get("/api/auth/login").header(HttpHeaders.AUTHORIZATION, trainee.auth()))
-                .andExpect(status().isOk());
+        // when / then: login works only with the right password and returns a bearer token
+        mockMvc.perform(get("/api/auth/login").header(HttpHeaders.AUTHORIZATION, trainee.basicAuth()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.tokenType").value("Bearer"))
+                .andExpect(jsonPath("$.token").isNotEmpty());
         mockMvc.perform(get("/api/auth/login").header(HttpHeaders.AUTHORIZATION, basic(trainee.username(), "wrong")))
                 .andExpect(status().isUnauthorized());
 
@@ -122,15 +124,18 @@ class GymCrmApiEndToEndTest {
 
         // when / then: the password change takes effect
         mockMvc.perform(put("/api/auth/password")
+                        .header(HttpHeaders.AUTHORIZATION, trainee.auth())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"username\":\"" + trainee.username() + "\",\"oldPassword\":\""
                                 + trainee.password() + "\",\"newPassword\":\"NewSecret99\"}"))
                 .andExpect(status().isOk());
-        mockMvc.perform(get("/api/auth/login").header(HttpHeaders.AUTHORIZATION, trainee.auth()))
+        mockMvc.perform(get("/api/auth/login").header(HttpHeaders.AUTHORIZATION, trainee.basicAuth()))
                 .andExpect(status().isUnauthorized());
-        String newAuth = basic(trainee.username(), "NewSecret99");
-        mockMvc.perform(get("/api/auth/login").header(HttpHeaders.AUTHORIZATION, newAuth))
-                .andExpect(status().isOk());
+        String newLogin = mockMvc.perform(get("/api/auth/login")
+                        .header(HttpHeaders.AUTHORIZATION, basic(trainee.username(), "NewSecret99")))
+                .andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString();
+        String newAuth = "Bearer " + JsonPath.read(newLogin, "$.token");
 
         // when / then: deleting the trainee also deletes the trainings
         mockMvc.perform(delete("/api/trainees/" + trainee.username()).header(HttpHeaders.AUTHORIZATION, newAuth))
@@ -266,7 +271,8 @@ class GymCrmApiEndToEndTest {
 
     private Account account(MvcResult result) throws Exception {
         String json = result.getResponse().getContentAsString();
-        return new Account(JsonPath.read(json, "$.username"), JsonPath.read(json, "$.password"));
+        return new Account(JsonPath.read(json, "$.username"), JsonPath.read(json, "$.password"),
+                JsonPath.read(json, "$.token"));
     }
 
     private static String basic(String username, String password) {
@@ -274,8 +280,15 @@ class GymCrmApiEndToEndTest {
         return "Basic " + Base64.getEncoder().encodeToString(token.getBytes(StandardCharsets.UTF_8));
     }
 
-    private record Account(String username, String password) {
+    /**
+     * @param token bearer token returned by the registration
+     */
+    private record Account(String username, String password, String token) {
         String auth() {
+            return "Bearer " + token;
+        }
+
+        String basicAuth() {
             return basic(username, password);
         }
     }

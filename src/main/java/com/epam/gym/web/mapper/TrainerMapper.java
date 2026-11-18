@@ -4,7 +4,6 @@ import com.epam.gym.model.Trainer;
 import com.epam.gym.model.User;
 import com.epam.gym.web.dto.request.TrainerRegistrationRequest;
 import com.epam.gym.web.dto.request.UpdateTrainerRequest;
-import com.epam.gym.web.dto.response.RegistrationResponse;
 import com.epam.gym.web.dto.response.TrainerProfileResponse;
 import org.springframework.stereotype.Component;
 
@@ -31,10 +30,6 @@ public class TrainerMapper {
         Trainer trainer = new Trainer();
         trainer.setUser(user);
         return trainer;
-    }
-
-    public RegistrationResponse toRegistrationResponse(Trainer trainer) {
-        return new RegistrationResponse(trainer.getUser().getUsername(), trainer.getUser().getPassword());
     }
 
     public TrainerProfileResponse toProfileResponse(Trainer trainer) {

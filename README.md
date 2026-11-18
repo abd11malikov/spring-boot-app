@@ -9,7 +9,8 @@ and separate configuration per environment.
 | Area | Technology |
 |---|---|
 | Language | Java 17 |
-| Framework | Spring Boot 3.5 (Web, Data JPA, Validation, Actuator) |
+| Framework | Spring Boot 3.5 (Web, Data JPA, Validation, Actuator, Security) |
+| Security | Spring Security 6, BCrypt password hashing, JWT bearer tokens (JJWT) |
 | Persistence | Hibernate 6.6 (JPA), HikariCP, PostgreSQL |
 | Monitoring | Spring Boot Actuator, Micrometer, Prometheus |
 | API docs | OpenAPI 3 / Swagger UI (springdoc) |
@@ -100,7 +101,8 @@ if one is missing. The database host in `DB_URL` is the Compose service name `db
 
 ### Docker Compose (recommended)
 
-Create your `.env` from the template once and set a password:
+Create your `.env` from the template once and set the database password and the JWT signing key
+(`openssl rand -base64 32`):
 
 ```bash
 cp .env.example .env
@@ -206,11 +208,15 @@ Register a trainee (stored in PostgreSQL), read it back, restart the app contain
 
 ```bash
 curl -s -X POST http://localhost:8080/api/trainees -H "Content-Type: application/json" -d '{"firstName":"John","lastName":"Doe","address":"Main St 1"}'
-# {"username":"John.Doe","password":"aB3dE5gH7j"}
+# {"username":"John.Doe","password":"aB3dE5gH7j","token":"eyJhbGciOiJIUzI1NiJ9..."}
 ```
 
 ```bash
-curl -s -u John.Doe:aB3dE5gH7j http://localhost:8080/api/trainees/John.Doe
+TOKEN=$(curl -s -u John.Doe:aB3dE5gH7j http://localhost:8080/api/auth/login | jq -r .token)
+```
+
+```bash
+curl -s -H "Authorization: Bearer $TOKEN" http://localhost:8080/api/trainees/John.Doe
 ```
 
 ```bash
@@ -218,11 +224,12 @@ docker compose restart app
 ```
 
 ```bash
-curl -s -u John.Doe:aB3dE5gH7j http://localhost:8080/api/trainees/John.Doe
+curl -s -H "Authorization: Bearer $TOKEN" http://localhost:8080/api/trainees/John.Doe
 ```
 
 The profile is still returned after the restart: the application reconnected to the database container and the data
-lives in the `gym-crm-db-data` volume. HikariCP also recovers on its own when the **database** container is restarted
+lives in the `gym-crm-db-data` volume. The token also survives the restart, because it is signed with the fixed
+`JWT_SECRET` (only logout revocations, kept in memory, are lost). HikariCP also recovers on its own when the **database** container is restarted
 (`docker compose restart db`): requests fail briefly while it is down, then succeed again without restarting the app.
 
 ## Monitoring
@@ -256,21 +263,40 @@ Actuator endpoints:
 
 `monitoring/prometheus.yml` is a ready-to-use scrape configuration for a Prometheus server.
 
-## Authentication
+## Security
 
-Registration endpoints are public and return the generated username and password.
-Every other API endpoint requires **HTTP Basic** authentication:
+Spring Security protects every endpoint except **trainee/trainer registration**, the API docs and the public actuator
+endpoints (`health`, `info`, `prometheus`). The API is stateless: no session, no cookies, so CSRF protection is off.
+
+| Feature | How |
+|---|---|
+| Password storage | BCrypt (`BCryptPasswordEncoder`): a random salt per password, stored inside the hash. The generated password is returned once at registration; only the hash is saved. |
+| Login | `GET /api/auth/login` with the username/password in an HTTP Basic header. A dedicated filter chain authenticates them through Spring Security's `AuthenticationManager` and the response carries a JWT. |
+| Authorization | Every other call sends `Authorization: Bearer <token>`. Tokens are HMAC-SHA256 signed, valid for 1 hour (`gym.security.jwt.expiration`). Registration also returns a token, so a new user doesn't have to log in. |
+| Brute force protection | 3 wrong passwords in a row block the username for 5 minutes (`gym.security.brute-force.*`), even for the right password: `429 Too Many Requests` with `Retry-After`. A successful login resets the counter. |
+| Logout | `POST /api/auth/logout` (Spring Security logout filter) revokes the token it was sent with; the token is refused afterwards. |
+| CORS | Origins from `gym.security.cors.allowed-origins` (env `CORS_ALLOWED_ORIGINS`, default `http://localhost:3000,http://localhost:4200`), methods `GET POST PUT PATCH DELETE OPTIONS`, headers `Authorization`, `Content-Type`, `X-Transaction-Id`. |
 
 ```bash
 curl -X POST http://localhost:8080/api/trainees \
      -H "Content-Type: application/json" \
      -d '{"firstName":"John","lastName":"Doe"}'
-# {"username":"John.Doe","password":"aB3dE5gH7j"}
+# {"username":"John.Doe","password":"aB3dE5gH7j","token":"eyJhbGciOiJIUzI1NiJ9..."}
 
-curl -u John.Doe:aB3dE5gH7j http://localhost:8080/api/trainees/John.Doe
+curl -u John.Doe:aB3dE5gH7j http://localhost:8080/api/auth/login
+# {"token":"eyJhbGciOiJIUzI1NiJ9...","tokenType":"Bearer","expiresIn":3600}
+
+curl -H "Authorization: Bearer eyJhbGciOiJIUzI1NiJ9..." http://localhost:8080/api/trainees/John.Doe
+
+curl -X POST -H "Authorization: Bearer eyJhbGciOiJIUzI1NiJ9..." http://localhost:8080/api/auth/logout
 ```
 
 Profile data can be viewed by any logged-in user, but only the owner can change it (`403` otherwise).
+
+The JWT signing key is `gym.security.jwt.secret`, a Base64 key of at least 256 bits. `local`, `dev` and tests use a
+built-in development key; `stg`, `prod` and `docker` require the `JWT_SECRET` environment variable and refuse to
+start without it. Users created before this module have plain-text passwords, which no longer match: recreate the
+database (or register them again).
 
 ## Endpoints
 
@@ -278,12 +304,13 @@ Profile data can be viewed by any logged-in user, but only the owner can change 
 |---|---|---|---|
 | 1 | Trainee registration | `POST /api/trainees` | — |
 | 2 | Trainer registration | `POST /api/trainers` | — |
-| 3 | Login | `GET /api/auth/login` | Basic |
-| 4 | Change password | `PUT /api/auth/password` | old password in body |
-| 5 | Get trainee profile | `GET /api/trainees/{username}` | Basic |
+| 3 | Login | `GET /api/auth/login` | Basic → returns token |
+| 4 | Change password | `PUT /api/auth/password` | owner + old password in body |
+| — | Logout | `POST /api/auth/logout` | Bearer |
+| 5 | Get trainee profile | `GET /api/trainees/{username}` | Bearer |
 | 6 | Update trainee profile | `PUT /api/trainees/{username}` | owner |
 | 7 | Delete trainee profile | `DELETE /api/trainees/{username}` | owner |
-| 8 | Get trainer profile | `GET /api/trainers/{username}` | Basic |
+| 8 | Get trainer profile | `GET /api/trainers/{username}` | Bearer |
 | 9 | Update trainer profile | `PUT /api/trainers/{username}` | owner |
 | 10 | Active trainers not assigned to trainee | `GET /api/trainees/{username}/unassigned-trainers` | owner |
 | 11 | Update trainee's trainers list | `PUT /api/trainees/{username}/trainers` | owner |
@@ -292,7 +319,9 @@ Profile data can be viewed by any logged-in user, but only the owner can change 
 | 14 | Add training | `POST /api/trainings` | the training's trainee or trainer |
 | 15 | Activate / deactivate trainee | `PATCH /api/trainees/{username}/status` | owner |
 | 16 | Activate / deactivate trainer | `PATCH /api/trainers/{username}/status` | owner |
-| 17 | Training types | `GET /api/training-types` | Basic |
+| 17 | Training types | `GET /api/training-types` | Bearer |
+
+"owner" means a valid bearer token of the user named in the path.
 
 Dates use ISO format (`2026-11-10`). Training filters are optional; `trainerName` / `traineeName` take a username.
 Registration returns `201 Created`; all other successful calls return `200 OK`.
@@ -316,10 +345,11 @@ Every error has the same JSON shape:
 | Status | When |
 |---|---|
 | 400 | Missing/invalid fields, malformed JSON, invalid query parameter |
-| 401 | Missing or wrong credentials (response includes `WWW-Authenticate: Basic`) |
+| 401 | Missing, invalid, expired or revoked token (`WWW-Authenticate: Bearer`); wrong login credentials (`WWW-Authenticate: Basic`) |
 | 403 | Changing someone else's profile, or adding a training you're not part of |
 | 404 | Unknown trainee, trainer, training type or URL |
 | 405 / 415 | Wrong HTTP method / content type |
+| 429 | Login blocked for 5 minutes after 3 unsuccessful attempts |
 | 409 | Activating an already active profile (or deactivating an inactive one) |
 | 500 | Unexpected error — details are logged, never returned |
 
@@ -329,7 +359,7 @@ Every error has the same JSON shape:
    or generated). It appears in every log line of that request, in the `X-Transaction-Id` response header
    and in error responses.
 2. **REST call level** — one line per call with method, path, status, duration and request/response bodies.
-   Passwords are masked (`"password":"****"`).
+   Passwords and tokens are masked (`"password":"****"`, `"token":"****"`).
 
 Log levels are set per profile; `stg` and `prod` also write a rolling log file to `logs/gym-crm.log`
 (`logback-spring.xml`).
@@ -340,11 +370,14 @@ Log levels are set per profile; `stg` and `prod` also write a rolling log file t
 mvn test
 ```
 
-Runs 230 tests against an in-memory H2 database (`test` profile) — no PostgreSQL needed:
+Runs 248 tests against an in-memory H2 database (`test` profile) — no PostgreSQL needed:
 
 - unit tests for services, generators, mappers, validation, filters, error handling, health indicators and metrics
 - profile tests: each environment's database settings, and `stg`/`prod` refusing to start without them
 - controller tests with standalone MockMvc
+- security unit tests: JWT issuing/validation, brute force counter, token blacklist
+- `SecurityEndToEndTest` — the real filter chains: protected endpoints, login, blocking after 3 failures, logout,
+  token expiry, BCrypt hashes in the database and CORS preflight
 - DAO tests with `@DataJpaTest` (rolled back after each test)
 - `ActuatorEndpointsTest` — health, info and Prometheus output of the running application
 - `GymCrmApiEndToEndTest` — full flow through all 17 endpoints with real transactions
@@ -357,7 +390,8 @@ src/main/java/com/epam/gym
 ├── config/                  application beans, required-properties check for stg/prod
 ├── model/                   JPA entities
 ├── dao/                     data access (EntityManager, JPQL, Criteria API)
-├── service/                 business logic, authentication, validation
+├── security/                Spring Security config, JWT, brute force protection, logout, CORS
+├── service/                 business logic, password change, validation
 ├── monitoring/
 │   ├── health/              custom health indicators
 │   └── metrics/             custom Micrometer metrics
@@ -367,7 +401,7 @@ src/main/java/com/epam/gym
     ├── controller/          REST controllers
     ├── dto/                 request and response bodies
     ├── mapper/              entity ↔ DTO conversion
-    ├── auth/                HTTP Basic parsing, ownership check
+    ├── auth/                ownership check
     ├── error/               global exception handler
     └── logging/             transaction ID and REST call logging filters
 ```
@@ -378,6 +412,10 @@ src/main/java/com/epam/gym
 - **One user, one role:** every registration creates a new user, which belongs to exactly one trainee or trainer.
 - **Trainer specialization is read-only** after registration; a training's type is the trainer's specialization.
 - **Deleting a trainee** also deletes their trainings and trainer assignments.
-- **Actuator endpoints are not behind HTTP Basic:** they serve monitoring systems, not users, and would normally
-  be protected at the network level (or with Spring Security in the next module).
-- **Passwords are stored as plain text** in this module; hashing comes with Spring Security.
+- **Health, info and Prometheus endpoints are public:** they serve load balancers and monitoring systems, not users,
+  and should be restricted at the network level. `/actuator/metrics` requires a token.
+- **Login keeps HTTP Basic** (as in the previous module) instead of a JSON body, so credentials never appear in a
+  URL or request log; everything after login uses the JWT.
+- **Brute force state and revoked tokens live in memory:** they reset on restart and are not shared between
+  instances. With several instances they would move to a shared store such as Redis.
+- **Changing the password** does not revoke tokens that are already issued; they expire within an hour.

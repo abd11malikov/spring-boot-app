@@ -7,13 +7,13 @@ import com.epam.gym.model.Trainee;
 import com.epam.gym.model.Trainer;
 import com.epam.gym.model.User;
 import com.epam.gym.monitoring.metrics.GymMetrics;
-import com.epam.gym.service.AuthenticationService;
 import com.epam.gym.service.TraineeService;
 import com.epam.gym.util.PasswordGenerator;
 import com.epam.gym.util.UsernameGenerator;
 import org.hibernate.Hibernate;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -33,95 +33,94 @@ public class TraineeServiceImpl implements TraineeService {
 
     private final TraineeDao traineeDao;
     private final TrainerDao trainerDao;
-    private final AuthenticationService authenticationService;
     private final UsernameGenerator usernameGenerator;
     private final PasswordGenerator passwordGenerator;
+    private final PasswordEncoder passwordEncoder;
     private final GymMetrics metrics;
 
     public TraineeServiceImpl(TraineeDao traineeDao,
                               TrainerDao trainerDao,
-                              AuthenticationService authenticationService,
                               UsernameGenerator usernameGenerator,
                               PasswordGenerator passwordGenerator,
+                              PasswordEncoder passwordEncoder,
                               GymMetrics metrics) {
         this.traineeDao = traineeDao;
         this.trainerDao = trainerDao;
-        this.authenticationService = authenticationService;
         this.usernameGenerator = usernameGenerator;
         this.passwordGenerator = passwordGenerator;
+        this.passwordEncoder = passwordEncoder;
         this.metrics = metrics;
     }
 
     @Override
-    public Trainee create(Trainee trainee) {
+    public Credentials create(Trainee trainee) {
         validate(trainee);
         User user = trainee.getUser();
+        String password = passwordGenerator.generate();
         user.setUsername(usernameGenerator.generate(user.getFirstName(), user.getLastName()));
-        user.setPassword(passwordGenerator.generate());
+        user.setPassword(passwordEncoder.encode(password));
         user.setActive(true);
 
-        Trainee created = traineeDao.create(trainee);
+        traineeDao.create(trainee);
         metrics.traineeRegistered();
         log.info("Created trainee with username {}", user.getUsername());
-        return created;
+        return new Credentials(user.getUsername(), password);
     }
 
     @Override
     @Transactional(readOnly = true)
-    public Trainee selectByUsername(Credentials credentials, String username) {
-        authenticationService.authenticateUser(credentials);
-        Trainee trainee = traineeDao.findByUsername(username)
-                .orElseThrow(() -> new NoSuchElementException("Trainee " + username + " not found"));
+    public Trainee selectByUsername(String username) {
+        Trainee trainee = findTrainee(username);
         Hibernate.initialize(trainee.getTrainers());
         log.info("Selected trainee {}", username);
         return trainee;
     }
 
     @Override
-    public Trainee updateProfile(Credentials credentials, Trainee changes) {
+    public Trainee updateProfile(String username, Trainee changes) {
         validate(changes);
-        Trainee trainee = authenticationService.authenticateTrainee(credentials);
+        Trainee trainee = findTrainee(username);
         trainee.getUser().setFirstName(changes.getUser().getFirstName());
         trainee.getUser().setLastName(changes.getUser().getLastName());
         trainee.getUser().setActive(changes.getUser().isActive());
         trainee.setDateOfBirth(changes.getDateOfBirth());
         trainee.setAddress(changes.getAddress());
         Hibernate.initialize(trainee.getTrainers());
-        log.info("Updated profile of trainee {}", credentials.username());
+        log.info("Updated profile of trainee {}", username);
         return trainee;
     }
 
     @Override
-    public void setActive(Credentials credentials, boolean active) {
-        Trainee trainee = authenticationService.authenticateTrainee(credentials);
+    public void setActive(String username, boolean active) {
+        Trainee trainee = findTrainee(username);
         if (trainee.getUser().isActive() == active) {
-            throw new IllegalStateException("Trainee " + credentials.username() + " is already "
+            throw new IllegalStateException("Trainee " + username + " is already "
                     + (active ? "active" : "inactive"));
         }
         trainee.getUser().setActive(active);
-        log.info("Trainee {} is now {}", credentials.username(), active ? "active" : "inactive");
+        log.info("Trainee {} is now {}", username, active ? "active" : "inactive");
     }
 
     @Override
-    public void delete(Credentials credentials) {
-        Trainee trainee = authenticationService.authenticateTrainee(credentials);
+    public void delete(String username) {
+        Trainee trainee = findTrainee(username);
         traineeDao.delete(trainee);
-        log.info("Deleted trainee {}", credentials.username());
+        log.info("Deleted trainee {}", username);
     }
 
     @Override
     @Transactional(readOnly = true)
-    public List<Trainer> getUnassignedTrainers(Credentials credentials) {
-        authenticationService.authenticateTrainee(credentials);
-        List<Trainer> trainers = trainerDao.findActiveNotAssignedToTrainee(credentials.username());
-        log.info("Found {} active trainers not assigned to trainee {}", trainers.size(), credentials.username());
+    public List<Trainer> getUnassignedTrainers(String username) {
+        findTrainee(username);
+        List<Trainer> trainers = trainerDao.findActiveNotAssignedToTrainee(username);
+        log.info("Found {} active trainers not assigned to trainee {}", trainers.size(), username);
         return trainers;
     }
 
     @Override
-    public List<Trainer> updateTrainers(Credentials credentials, List<String> trainerUsernames) {
+    public List<Trainer> updateTrainers(String username, List<String> trainerUsernames) {
         requireNotNull(trainerUsernames, "Trainer usernames");
-        Trainee trainee = authenticationService.authenticateTrainee(credentials);
+        Trainee trainee = findTrainee(username);
 
         Set<Trainer> trainers = new HashSet<>();
         for (String trainerUsername : trainerUsernames) {
@@ -132,8 +131,13 @@ public class TraineeServiceImpl implements TraineeService {
         trainee.getTrainers().clear();
         trainee.getTrainers().addAll(trainers);
 
-        log.info("Trainee {} now has {} trainers", credentials.username(), trainers.size());
+        log.info("Trainee {} now has {} trainers", username, trainers.size());
         return new ArrayList<>(trainee.getTrainers());
+    }
+
+    private Trainee findTrainee(String username) {
+        return traineeDao.findByUsername(username)
+                .orElseThrow(() -> new NoSuchElementException("Trainee " + username + " not found"));
     }
 
     private void validate(Trainee trainee) {

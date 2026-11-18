@@ -3,16 +3,13 @@ package com.epam.gym.service.impl;
 import com.epam.gym.dao.TraineeDao;
 import com.epam.gym.dao.TrainerDao;
 import com.epam.gym.dao.TrainingDao;
-import com.epam.gym.dto.Credentials;
 import com.epam.gym.dto.TrainingRequest;
 import com.epam.gym.exception.AccessDeniedException;
-import com.epam.gym.exception.AuthenticationFailedException;
 import com.epam.gym.monitoring.metrics.GymMetrics;
 import com.epam.gym.model.Trainee;
 import com.epam.gym.model.Trainer;
 import com.epam.gym.model.Training;
 import com.epam.gym.model.TrainingType;
-import com.epam.gym.service.AuthenticationService;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -39,9 +36,9 @@ import static org.mockito.Mockito.when;
 @ExtendWith(MockitoExtension.class)
 class TrainingServiceImplTest {
 
-    private static final Credentials TRAINEE_LOGIN = new Credentials("John.Smith", "password12");
-    private static final Credentials TRAINER_LOGIN = new Credentials("Nodira.Karimova", "password12");
-    private static final Credentials STRANGER_LOGIN = new Credentials("Jane.Doe", "password12");
+    private static final String TRAINEE = "John.Smith";
+    private static final String TRAINER = "Nodira.Karimova";
+    private static final String STRANGER = "Jane.Doe";
     private static final LocalDate DATE = LocalDate.of(2026, 3, 10);
 
     @Mock
@@ -53,9 +50,6 @@ class TrainingServiceImplTest {
     @Mock
     private TrainerDao trainerDao;
 
-    @Mock
-    private AuthenticationService authenticationService;
-
     private final SimpleMeterRegistry meterRegistry = new SimpleMeterRegistry();
 
     private TrainingServiceImpl trainingService;
@@ -66,7 +60,7 @@ class TrainingServiceImplTest {
 
     @BeforeEach
     void setUp() {
-        trainingService = new TrainingServiceImpl(trainingDao, traineeDao, trainerDao, authenticationService,
+        trainingService = new TrainingServiceImpl(trainingDao, traineeDao, trainerDao,
                 new GymMetrics(meterRegistry));
         john = trainee("John", "Smith", "John.Smith");
         nodira = trainer("Nodira", "Karimova", "Nodira.Karimova", yoga);
@@ -75,11 +69,10 @@ class TrainingServiceImplTest {
     @Test
     void addTraining_byTrainee_usesTrainerSpecializationAndLinksTrainer() {
         // given
-        when(authenticationService.authenticateUser(TRAINEE_LOGIN)).thenReturn(john.getUser());
         stubReferences();
 
         // when
-        Training training = trainingService.addTraining(TRAINEE_LOGIN, request(60));
+        Training training = trainingService.addTraining(TRAINEE, request(60));
 
         // then
         assertSame(john, training.getTrainee());
@@ -96,11 +89,10 @@ class TrainingServiceImplTest {
     @Test
     void addTraining_byTrainer_isAllowed() {
         // given
-        when(authenticationService.authenticateUser(TRAINER_LOGIN)).thenReturn(nodira.getUser());
         stubReferences();
 
         // when
-        trainingService.addTraining(TRAINER_LOGIN, request(60));
+        trainingService.addTraining(TRAINER, request(60));
 
         // then
         verify(trainingDao).create(any());
@@ -109,13 +101,11 @@ class TrainingServiceImplTest {
     @Test
     void addTraining_byOtherUser_throwsAccessDenied() {
         // given
-        when(authenticationService.authenticateUser(STRANGER_LOGIN))
-                .thenReturn(trainee("Jane", "Doe", "Jane.Doe").getUser());
         TrainingRequest request = request(60);
 
         // when
         AccessDeniedException exception = assertThrows(AccessDeniedException.class,
-                () -> trainingService.addTraining(STRANGER_LOGIN, request));
+                () -> trainingService.addTraining(STRANGER, request));
 
         // then
         assertEquals("Only the trainee or the trainer can add this training", exception.getMessage());
@@ -130,7 +120,7 @@ class TrainingServiceImplTest {
 
         // when
         IllegalArgumentException exception = assertThrows(IllegalArgumentException.class,
-                () -> trainingService.addTraining(TRAINEE_LOGIN, request));
+                () -> trainingService.addTraining(TRAINEE, request));
 
         // then
         assertEquals("Training duration must be positive", exception.getMessage());
@@ -144,7 +134,7 @@ class TrainingServiceImplTest {
 
         // when
         IllegalArgumentException exception = assertThrows(IllegalArgumentException.class,
-                () -> trainingService.addTraining(TRAINEE_LOGIN, request));
+                () -> trainingService.addTraining(TRAINEE, request));
 
         // then
         assertEquals("Training date is required", exception.getMessage());
@@ -153,14 +143,13 @@ class TrainingServiceImplTest {
     @Test
     void addTraining_unknownTrainer_throwsException() {
         // given
-        when(authenticationService.authenticateUser(TRAINEE_LOGIN)).thenReturn(john.getUser());
         when(traineeDao.findByUsername("John.Smith")).thenReturn(Optional.of(john));
         when(trainerDao.findByUsername("Nodira.Karimova")).thenReturn(Optional.empty());
         TrainingRequest request = request(60);
 
         // when
         NoSuchElementException exception = assertThrows(NoSuchElementException.class,
-                () -> trainingService.addTraining(TRAINEE_LOGIN, request));
+                () -> trainingService.addTraining(TRAINEE, request));
 
         // then
         assertEquals("Trainer Nodira.Karimova not found", exception.getMessage());
@@ -168,47 +157,46 @@ class TrainingServiceImplTest {
     }
 
     @Test
-    void getTraineeTrainings_authenticatesAndPassesCriteriaToDao() {
+    void getTraineeTrainings_passesCriteriaToDao() {
         // given
         List<Training> trainings = List.of(new Training());
+        when(traineeDao.findByUsername(TRAINEE)).thenReturn(Optional.of(john));
         when(trainingDao.findTraineeTrainings("John.Smith", DATE, null, "Nodira.Karimova", "Yoga"))
                 .thenReturn(trainings);
 
         // when
-        List<Training> result = trainingService.getTraineeTrainings(TRAINEE_LOGIN, DATE, null, "Nodira.Karimova", "Yoga");
+        List<Training> result = trainingService.getTraineeTrainings(TRAINEE, DATE, null, "Nodira.Karimova", "Yoga");
 
         // then
         assertEquals(trainings, result);
-        verify(authenticationService).authenticateTrainee(TRAINEE_LOGIN);
         assertEquals(1, meterRegistry.get("gym.trainings.search").tag("side", "trainee").timer().count());
     }
 
     @Test
-    void getTraineeTrainings_failedAuthentication_doesNotQuery() {
+    void getTraineeTrainings_userIsNotATrainee_doesNotQuery() {
         // given
-        when(authenticationService.authenticateTrainee(TRAINEE_LOGIN))
-                .thenThrow(new AuthenticationFailedException("bad"));
+        when(traineeDao.findByUsername(TRAINER)).thenReturn(Optional.empty());
 
         // when
-        assertThrows(AuthenticationFailedException.class,
-                () -> trainingService.getTraineeTrainings(TRAINEE_LOGIN, null, null, null, null));
+        assertThrows(NoSuchElementException.class,
+                () -> trainingService.getTraineeTrainings(TRAINER, null, null, null, null));
 
         // then
         verify(trainingDao, never()).findTraineeTrainings(any(), any(), any(), any(), any());
     }
 
     @Test
-    void getTrainerTrainings_authenticatesAndPassesCriteriaToDao() {
+    void getTrainerTrainings_passesCriteriaToDao() {
         // given
         List<Training> trainings = List.of(new Training());
+        when(trainerDao.findByUsername(TRAINER)).thenReturn(Optional.of(nodira));
         when(trainingDao.findTrainerTrainings("Nodira.Karimova", null, DATE, "John.Smith")).thenReturn(trainings);
 
         // when
-        List<Training> result = trainingService.getTrainerTrainings(TRAINER_LOGIN, null, DATE, "John.Smith");
+        List<Training> result = trainingService.getTrainerTrainings(TRAINER, null, DATE, "John.Smith");
 
         // then
         assertEquals(trainings, result);
-        verify(authenticationService).authenticateTrainer(TRAINER_LOGIN);
     }
 
     private void stubReferences() {

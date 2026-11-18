@@ -1,6 +1,5 @@
 package com.epam.gym.web.controller;
 
-import com.epam.gym.dto.Credentials;
 import com.epam.gym.service.TrainingTypeService;
 import com.epam.gym.web.dto.response.TrainingTypeResponse;
 import com.epam.gym.web.mapper.TrainingTypeMapper;
@@ -31,10 +30,10 @@ public class TrainingTypeController {
     @Operation(summary = "Get all training types")
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "Training types returned"),
-            @ApiResponse(responseCode = "401", description = "Missing or invalid credentials")
+            @ApiResponse(responseCode = "401", description = "Missing, invalid, expired or revoked token")
     })
-    public List<TrainingTypeResponse> getTrainingTypes(Credentials credentials) {
-        return trainingTypeService.findAll(credentials).stream()
+    public List<TrainingTypeResponse> getTrainingTypes() {
+        return trainingTypeService.findAll().stream()
                 .map(trainingTypeMapper::toResponse)
                 .toList();
     }

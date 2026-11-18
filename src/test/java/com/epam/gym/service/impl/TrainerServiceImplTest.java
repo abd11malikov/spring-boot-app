@@ -7,7 +7,6 @@ import com.epam.gym.monitoring.metrics.GymMetrics;
 import com.epam.gym.model.Trainer;
 import com.epam.gym.model.TrainingType;
 import com.epam.gym.model.User;
-import com.epam.gym.service.AuthenticationService;
 import com.epam.gym.util.PasswordGenerator;
 import com.epam.gym.util.UsernameGenerator;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
@@ -16,6 +15,8 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
+import org.springframework.security.crypto.password.PasswordEncoder;
 
 import java.util.NoSuchElementException;
 import java.util.Optional;
@@ -34,16 +35,13 @@ import static org.mockito.Mockito.when;
 @ExtendWith(MockitoExtension.class)
 class TrainerServiceImplTest {
 
-    private static final Credentials LOGIN = new Credentials("Nodira.Karimova", "password12");
+    private static final String USERNAME = "Nodira.Karimova";
 
     @Mock
     private TrainerDao trainerDao;
 
     @Mock
     private TrainingTypeDao trainingTypeDao;
-
-    @Mock
-    private AuthenticationService authenticationService;
 
     @Mock
     private UsernameGenerator usernameGenerator;
@@ -53,6 +51,8 @@ class TrainerServiceImplTest {
 
     private final SimpleMeterRegistry meterRegistry = new SimpleMeterRegistry();
 
+    private final PasswordEncoder passwordEncoder = new BCryptPasswordEncoder(4);
+
     private TrainerServiceImpl trainerService;
 
     private final TrainingType yoga = new TrainingType("Yoga");
@@ -61,7 +61,7 @@ class TrainerServiceImplTest {
     @BeforeEach
     void setUp() {
         trainerService = new TrainerServiceImpl(
-                trainerDao, trainingTypeDao, authenticationService, usernameGenerator, passwordGenerator,
+                trainerDao, trainingTypeDao, usernameGenerator, passwordGenerator, passwordEncoder,
                 new GymMetrics(meterRegistry));
         nodira = trainer("Nodira", "Karimova", "Nodira.Karimova", yoga);
     }
@@ -77,13 +77,14 @@ class TrainerServiceImplTest {
         when(trainerDao.create(trainer)).thenReturn(trainer);
 
         // when
-        Trainer created = trainerService.create(trainer, 2L);
+        Credentials credentials = trainerService.create(trainer, 2L);
 
         // then
-        assertSame(yoga, created.getSpecialization());
-        assertEquals("Nodira.Karimova", created.getUser().getUsername());
-        assertEquals("sT7uV1wX3y", created.getUser().getPassword());
-        assertTrue(created.getUser().isActive());
+        assertEquals(new Credentials("Nodira.Karimova", "sT7uV1wX3y"), credentials);
+        assertSame(yoga, trainer.getSpecialization());
+        assertEquals("Nodira.Karimova", trainer.getUser().getUsername());
+        assertTrue(passwordEncoder.matches("sT7uV1wX3y", trainer.getUser().getPassword()));
+        assertTrue(trainer.getUser().isActive());
         assertEquals(1.0, meterRegistry.get("gym.registrations").tag("role", "trainer").counter().count());
     }
 
@@ -133,16 +134,15 @@ class TrainerServiceImplTest {
     }
 
     @Test
-    void selectByUsername_authenticatedUser_returnsTrainer() {
+    void selectByUsername_existingTrainer_returnsIt() {
         // given
         when(trainerDao.findByUsername("Nodira.Karimova")).thenReturn(Optional.of(nodira));
 
         // when
-        Trainer result = trainerService.selectByUsername(LOGIN, "Nodira.Karimova");
+        Trainer result = trainerService.selectByUsername("Nodira.Karimova");
 
         // then
         assertSame(nodira, result);
-        verify(authenticationService).authenticateUser(LOGIN);
     }
 
     @Test
@@ -152,7 +152,7 @@ class TrainerServiceImplTest {
 
         // when
         NoSuchElementException exception = assertThrows(NoSuchElementException.class,
-                () -> trainerService.selectByUsername(LOGIN, "Nobody.Here"));
+                () -> trainerService.selectByUsername("Nobody.Here"));
 
         // then
         assertEquals("Trainer Nobody.Here not found", exception.getMessage());
@@ -164,10 +164,10 @@ class TrainerServiceImplTest {
         User changedUser = new User("Nodira", "Aliyeva");
         changedUser.setActive(false);
         Trainer changes = new Trainer(changedUser, new TrainingType("Cardio"));
-        when(authenticationService.authenticateTrainer(LOGIN)).thenReturn(nodira);
+        when(trainerDao.findByUsername(USERNAME)).thenReturn(Optional.of(nodira));
 
         // when
-        Trainer updated = trainerService.updateProfile(LOGIN, changes);
+        Trainer updated = trainerService.updateProfile(USERNAME, changes);
 
         // then
         assertSame(nodira, updated);
@@ -181,10 +181,10 @@ class TrainerServiceImplTest {
     @Test
     void setActive_false_deactivatesActiveTrainer() {
         // given
-        when(authenticationService.authenticateTrainer(LOGIN)).thenReturn(nodira);
+        when(trainerDao.findByUsername(USERNAME)).thenReturn(Optional.of(nodira));
 
         // when
-        trainerService.setActive(LOGIN, false);
+        trainerService.setActive(USERNAME, false);
 
         // then
         assertFalse(nodira.getUser().isActive());
@@ -194,10 +194,10 @@ class TrainerServiceImplTest {
     void setActive_true_activatesInactiveTrainer() {
         // given
         nodira.getUser().setActive(false);
-        when(authenticationService.authenticateTrainer(LOGIN)).thenReturn(nodira);
+        when(trainerDao.findByUsername(USERNAME)).thenReturn(Optional.of(nodira));
 
         // when
-        trainerService.setActive(LOGIN, true);
+        trainerService.setActive(USERNAME, true);
 
         // then
         assertTrue(nodira.getUser().isActive());
@@ -207,11 +207,11 @@ class TrainerServiceImplTest {
     void setActive_sameStatus_throwsException() {
         // given
         nodira.getUser().setActive(false);
-        when(authenticationService.authenticateTrainer(LOGIN)).thenReturn(nodira);
+        when(trainerDao.findByUsername(USERNAME)).thenReturn(Optional.of(nodira));
 
         // when
         IllegalStateException exception = assertThrows(IllegalStateException.class,
-                () -> trainerService.setActive(LOGIN, false));
+                () -> trainerService.setActive(USERNAME, false));
 
         // then
         assertEquals("Trainer Nodira.Karimova is already inactive", exception.getMessage());

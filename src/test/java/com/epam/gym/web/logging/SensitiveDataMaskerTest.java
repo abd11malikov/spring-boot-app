@@ -56,6 +56,18 @@ class SensitiveDataMaskerTest {
     }
 
     @Test
+    void mask_bearerToken_isReplaced() {
+        // given
+        String json = "{\"username\":\"John.Doe\",\"password\":\"aB3dE5gH7j\",\"token\":\"eyJ.payload.sig\"}";
+
+        // when
+        String masked = SensitiveDataMasker.mask(json);
+
+        // then
+        assertEquals("{\"username\":\"John.Doe\",\"password\":\"****\",\"token\":\"****\"}", masked);
+    }
+
+    @Test
     void mask_bodyWithoutPasswords_isUnchanged() {
         // given
         String json = "{\"firstName\":\"John\",\"passwordHint\":\"pet name\"}";
