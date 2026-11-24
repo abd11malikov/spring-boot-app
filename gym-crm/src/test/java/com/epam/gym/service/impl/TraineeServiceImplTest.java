@@ -11,8 +11,8 @@ import com.epam.gym.model.User;
 import com.epam.gym.util.PasswordGenerator;
 import com.epam.gym.util.UsernameGenerator;
 import com.epam.gym.workload.ActionType;
-import com.epam.gym.workload.TrainerWorkloadClient;
-import com.epam.gym.workload.TrainerWorkloadRequest;
+import com.epam.gym.workload.TrainerWorkloadPublisher;
+import com.epam.gym.workload.TrainerWorkloadMessage;
 import com.epam.gym.exception.WorkloadServiceUnavailableException;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.BeforeEach;
@@ -66,7 +66,7 @@ class TraineeServiceImplTest {
     private final PasswordEncoder passwordEncoder = new BCryptPasswordEncoder(4);
 
     @Mock
-    private TrainerWorkloadClient trainerWorkloadClient;
+    private TrainerWorkloadPublisher trainerWorkloadPublisher;
 
     private TraineeServiceImpl traineeService;
 
@@ -75,7 +75,7 @@ class TraineeServiceImplTest {
     @BeforeEach
     void setUp() {
         traineeService = new TraineeServiceImpl(
-                traineeDao, trainerDao, usernameGenerator, passwordGenerator, passwordEncoder, trainerWorkloadClient,
+                traineeDao, trainerDao, usernameGenerator, passwordGenerator, passwordEncoder, trainerWorkloadPublisher,
                 new GymMetrics(meterRegistry));
         john = trainee("John", "Smith", "John.Smith");
     }
@@ -228,9 +228,9 @@ class TraineeServiceImplTest {
 
         // then
         verify(traineeDao).delete(john);
-        verify(trainerWorkloadClient).updateWorkload(new TrainerWorkloadRequest("Nodira.Karimova", "Nodira",
+        verify(trainerWorkloadPublisher).publish(new TrainerWorkloadMessage("Nodira.Karimova", "Nodira",
                 "Karimova", true, LocalDate.of(2026, 11, 10), 60, ActionType.DELETE));
-        verify(trainerWorkloadClient).updateWorkload(new TrainerWorkloadRequest("Nodira.Karimova", "Nodira",
+        verify(trainerWorkloadPublisher).publish(new TrainerWorkloadMessage("Nodira.Karimova", "Nodira",
                 "Karimova", true, LocalDate.of(2026, 12, 1), 45, ActionType.DELETE));
     }
 
@@ -244,7 +244,7 @@ class TraineeServiceImplTest {
 
         // then
         verify(traineeDao).delete(john);
-        verifyNoInteractions(trainerWorkloadClient);
+        verifyNoInteractions(trainerWorkloadPublisher);
     }
 
     @Test
@@ -254,7 +254,7 @@ class TraineeServiceImplTest {
         john.getTrainings().add(training(john, nodira, LocalDate.of(2026, 11, 10), 60));
         when(traineeDao.findByUsername(USERNAME)).thenReturn(Optional.of(john));
         doThrow(new WorkloadServiceUnavailableException(new RuntimeException("down")))
-                .when(trainerWorkloadClient).updateWorkload(any());
+                .when(trainerWorkloadPublisher).publish(any());
 
         // when / then
         assertThrows(WorkloadServiceUnavailableException.class, () -> traineeService.delete(USERNAME));

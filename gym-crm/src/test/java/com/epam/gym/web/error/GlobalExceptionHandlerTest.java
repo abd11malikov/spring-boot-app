@@ -163,7 +163,7 @@ class GlobalExceptionHandlerTest {
         result.andExpect(status().isServiceUnavailable())
                 .andExpect(header().string(HttpHeaders.RETRY_AFTER, "30"))
                 .andExpect(jsonPath("$.message")
-                        .value("Trainer workload service is temporarily unavailable, please try again later"))
+                        .value("Trainer workload updates are temporarily unavailable, please try again later"))
                 .andExpect(content().string(org.hamcrest.Matchers.not(
                         org.hamcrest.Matchers.containsString("connection refused"))));
     }

@@ -13,7 +13,7 @@ import static com.epam.gym.TestEntities.trainer;
 import static com.epam.gym.TestEntities.training;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
-class TrainerWorkloadRequestTest {
+class TrainerWorkloadMessageTest {
 
     @Test
     void of_takesTrainerDataFromTraining() {
@@ -23,18 +23,18 @@ class TrainerWorkloadRequestTest {
         nodira.getUser().setActive(false);
 
         // when
-        TrainerWorkloadRequest request = TrainerWorkloadRequest.of(
+        TrainerWorkloadMessage request = TrainerWorkloadMessage.of(
                 training(john, nodira, LocalDate.of(2026, 11, 10), 45), ActionType.DELETE);
 
         // then
-        assertEquals(new TrainerWorkloadRequest("Nodira.Karimova", "Nodira", "Karimova", false,
+        assertEquals(new TrainerWorkloadMessage("Nodira.Karimova", "Nodira", "Karimova", false,
                 LocalDate.of(2026, 11, 10), 45, ActionType.DELETE), request);
     }
 
     @Test
     void json_matchesTheWorkloadServiceContract() throws Exception {
         // given
-        TrainerWorkloadRequest request = new TrainerWorkloadRequest("Nodira.Karimova", "Nodira", "Karimova", true,
+        TrainerWorkloadMessage request = new TrainerWorkloadMessage("Nodira.Karimova", "Nodira", "Karimova", true,
                 LocalDate.of(2026, 11, 10), 60, ActionType.ADD);
 
         // when
@@ -49,7 +49,7 @@ class TrainerWorkloadRequestTest {
     @Test
     void disabledClient_acceptsUpdatesWithoutCallingAnything() {
         // when / then: no exception, nothing to call
-        new DisabledTrainerWorkloadClient().updateWorkload(new TrainerWorkloadRequest("Nodira.Karimova", "Nodira",
+        new DisabledTrainerWorkloadPublisher().publish(new TrainerWorkloadMessage("Nodira.Karimova", "Nodira",
                 "Karimova", true, LocalDate.of(2026, 11, 10), 60, ActionType.ADD));
     }
 }

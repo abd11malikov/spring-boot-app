@@ -11,8 +11,8 @@ import com.epam.gym.model.Training;
 import com.epam.gym.monitoring.metrics.GymMetrics;
 import com.epam.gym.service.TrainingService;
 import com.epam.gym.workload.ActionType;
-import com.epam.gym.workload.TrainerWorkloadClient;
-import com.epam.gym.workload.TrainerWorkloadRequest;
+import com.epam.gym.workload.TrainerWorkloadPublisher;
+import com.epam.gym.workload.TrainerWorkloadMessage;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -34,18 +34,18 @@ public class TrainingServiceImpl implements TrainingService {
     private final TrainingDao trainingDao;
     private final TraineeDao traineeDao;
     private final TrainerDao trainerDao;
-    private final TrainerWorkloadClient trainerWorkloadClient;
+    private final TrainerWorkloadPublisher trainerWorkloadPublisher;
     private final GymMetrics metrics;
 
     public TrainingServiceImpl(TrainingDao trainingDao,
                                TraineeDao traineeDao,
                                TrainerDao trainerDao,
-                               TrainerWorkloadClient trainerWorkloadClient,
+                               TrainerWorkloadPublisher trainerWorkloadPublisher,
                                GymMetrics metrics) {
         this.trainingDao = trainingDao;
         this.traineeDao = traineeDao;
         this.trainerDao = trainerDao;
-        this.trainerWorkloadClient = trainerWorkloadClient;
+        this.trainerWorkloadPublisher = trainerWorkloadPublisher;
         this.metrics = metrics;
     }
 
@@ -72,8 +72,8 @@ public class TrainingServiceImpl implements TrainingService {
 
         trainee.getTrainings().add(training);
         trainee.getTrainers().add(trainer);
-        // Last step: if the workload service can't be updated, the exception rolls the new training back
-        trainerWorkloadClient.updateWorkload(TrainerWorkloadRequest.of(training, ActionType.ADD));
+        // Sent only if this transaction commits; if it can't be queued, the exception rolls the training back
+        trainerWorkloadPublisher.publish(TrainerWorkloadMessage.of(training, ActionType.ADD));
         metrics.trainingAdded();
 
         log.info("Added training '{}' for trainee {} with trainer {}",

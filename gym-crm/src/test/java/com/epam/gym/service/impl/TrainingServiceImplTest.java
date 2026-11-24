@@ -8,8 +8,8 @@ import com.epam.gym.exception.AccessDeniedException;
 import com.epam.gym.monitoring.metrics.GymMetrics;
 import com.epam.gym.exception.WorkloadServiceUnavailableException;
 import com.epam.gym.workload.ActionType;
-import com.epam.gym.workload.TrainerWorkloadClient;
-import com.epam.gym.workload.TrainerWorkloadRequest;
+import com.epam.gym.workload.TrainerWorkloadPublisher;
+import com.epam.gym.workload.TrainerWorkloadMessage;
 import com.epam.gym.model.Trainee;
 import com.epam.gym.model.Trainer;
 import com.epam.gym.model.Training;
@@ -59,7 +59,7 @@ class TrainingServiceImplTest {
     private final SimpleMeterRegistry meterRegistry = new SimpleMeterRegistry();
 
     @Mock
-    private TrainerWorkloadClient trainerWorkloadClient;
+    private TrainerWorkloadPublisher trainerWorkloadPublisher;
 
     private TrainingServiceImpl trainingService;
 
@@ -69,7 +69,7 @@ class TrainingServiceImplTest {
 
     @BeforeEach
     void setUp() {
-        trainingService = new TrainingServiceImpl(trainingDao, traineeDao, trainerDao, trainerWorkloadClient,
+        trainingService = new TrainingServiceImpl(trainingDao, traineeDao, trainerDao, trainerWorkloadPublisher,
                 new GymMetrics(meterRegistry));
         john = trainee("John", "Smith", "John.Smith");
         nodira = trainer("Nodira", "Karimova", "Nodira.Karimova", yoga);
@@ -92,7 +92,7 @@ class TrainingServiceImplTest {
         assertEquals(60, training.getTrainingDuration());
         assertTrue(john.getTrainers().contains(nodira));
         verify(trainingDao).create(training);
-        verify(trainerWorkloadClient).updateWorkload(new TrainerWorkloadRequest("Nodira.Karimova", "Nodira",
+        verify(trainerWorkloadPublisher).publish(new TrainerWorkloadMessage("Nodira.Karimova", "Nodira",
                 "Karimova", true, DATE, 60, ActionType.ADD));
         assertEquals(1.0, meterRegistry.get("gym.trainings.added").counter().count());
     }
@@ -102,7 +102,7 @@ class TrainingServiceImplTest {
         // given
         stubReferences();
         doThrow(new WorkloadServiceUnavailableException(new RuntimeException("down")))
-                .when(trainerWorkloadClient).updateWorkload(any());
+                .when(trainerWorkloadPublisher).publish(any());
         TrainingRequest request = request(60);
 
         // when / then
@@ -134,7 +134,7 @@ class TrainingServiceImplTest {
         // then
         assertEquals("Only the trainee or the trainer can add this training", exception.getMessage());
         verify(trainingDao, never()).create(any());
-        verifyNoInteractions(trainerWorkloadClient);
+        verifyNoInteractions(trainerWorkloadPublisher);
         assertEquals(0.0, meterRegistry.get("gym.trainings.added").counter().count());
     }
 

@@ -1,13 +1,13 @@
-# Gym platform container environment: Gym CRM with its PostgreSQL database, the Trainer Workload service
-# and the Eureka discovery server, on one user-defined network.
+# Gym platform container environment: Gym CRM with its PostgreSQL database, the Trainer Workload service,
+# the ActiveMQ broker between them and the Eureka discovery server, on one user-defined network.
 #
 # Credentials and keys are NOT stored here: Compose reads them from the environment or from a `.env` file
 # next to this file (copy .env.example to .env). Startup fails with a clear message if one is missing.
 #
 # Addressing:
-#   - infrastructure level: containers reach each other by Compose service name (db, discovery-server),
-#     resolved by Docker's DNS on gym-net;
-#   - application level: Gym CRM finds the workload service by its Eureka name (trainer-workload-service).
+#   - containers reach each other by Compose service name (db, activemq, discovery-server), resolved by
+#     Docker's DNS on gym-net; Gym CRM and Trainer Workload talk only through the trainer.workload queue;
+#   - both services register with Eureka under their names.
 #   No container IP address is configured anywhere.
 name: gym-crm
 
@@ -19,6 +19,8 @@ x-spring-healthcheck: &spring-healthcheck
   start_period: 60s
 
 x-eureka-url: &eureka-url http://discovery-server:8761/eureka/
+# Fails fast (3 s) instead of hanging when the broker is down
+x-activemq-url: &activemq-url tcp://activemq:61616?connectionTimeout=3000
 
 services:
   db:
@@ -35,6 +37,34 @@ services:
       interval: 5s
       timeout: 5s
       retries: 10
+    networks:
+      - gym-net
+    restart: unless-stopped
+
+  activemq:
+    image: apache/activemq-classic:6.1.8
+    container_name: gym-activemq
+    environment:
+      # The image turns on broker authentication when a connection user is set
+      ACTIVEMQ_CONNECTION_USER: ${ACTIVEMQ_USER:?ACTIVEMQ_USER must be set (see .env.example)}
+      ACTIVEMQ_CONNECTION_PASSWORD: ${ACTIVEMQ_PASSWORD:?ACTIVEMQ_PASSWORD must be set (see .env.example)}
+      # Web console login: admin / ACTIVEMQ_PASSWORD. The user stays "admin" because the image renames the
+      # console user but not its admin group membership.
+      ACTIVEMQ_WEB_USER: admin
+      ACTIVEMQ_WEB_PASSWORD: ${ACTIVEMQ_PASSWORD:?ACTIVEMQ_PASSWORD must be set (see .env.example)}
+    volumes:
+      # Persistent messages survive a broker restart
+      - activemq-data:/opt/apache-activemq/data
+    healthcheck:
+      # Healthy once the OpenWire port accepts connections
+      test: ["CMD-SHELL", "bash -c 'exec 3<>/dev/tcp/127.0.0.1/61616' || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 15s
+    ports:
+      # Web console (queues, dead letters): http://localhost:8161/admin
+      - "${ACTIVEMQ_CONSOLE_PORT:-8161}:8161"
     networks:
       - gym-net
     restart: unless-stopped
@@ -58,14 +88,19 @@ services:
     build: ./trainer-workload-service
     image: gym-trainer-workload-service:1.0
     container_name: gym-trainer-workload-service
-    # Waits until Eureka answers its health check, not merely until its container has started
+    # Waits until Eureka and the broker answer their health checks, not merely until their containers started
     depends_on:
       discovery-server:
+        condition: service_healthy
+      activemq:
         condition: service_healthy
     environment:
       SPRING_PROFILES_ACTIVE: docker
       EUREKA_URL: *eureka-url
       SERVICE_JWT_SECRET: ${SERVICE_JWT_SECRET:?SERVICE_JWT_SECRET must be set (see .env.example)}
+      ACTIVEMQ_URL: *activemq-url
+      ACTIVEMQ_USER: ${ACTIVEMQ_USER:?ACTIVEMQ_USER must be set (see .env.example)}
+      ACTIVEMQ_PASSWORD: ${ACTIVEMQ_PASSWORD:?ACTIVEMQ_PASSWORD must be set (see .env.example)}
     healthcheck:
       <<: *spring-healthcheck
       test: ["CMD-SHELL", "curl -fsS -o /dev/null http://localhost:8081/actuator/health || exit 1"]
@@ -79,12 +114,13 @@ services:
     build: ./gym-crm
     image: gym-crm:1.0
     container_name: gym-crm-app
-    # Not tied to the workload service: Gym CRM starts without it and answers 503 (through timeouts and the
-    # circuit breaker) for the operations that need it while it is unavailable
+    # Not tied to the workload service: messages wait in the queue while it is down
     depends_on:
       db:
         condition: service_healthy
       discovery-server:
+        condition: service_healthy
+      activemq:
         condition: service_healthy
     environment:
       SPRING_PROFILES_ACTIVE: docker
@@ -94,6 +130,9 @@ services:
       JWT_SECRET: ${JWT_SECRET:?JWT_SECRET must be set (see .env.example)}
       SERVICE_JWT_SECRET: ${SERVICE_JWT_SECRET:?SERVICE_JWT_SECRET must be set (see .env.example)}
       EUREKA_URL: *eureka-url
+      ACTIVEMQ_URL: *activemq-url
+      ACTIVEMQ_USER: ${ACTIVEMQ_USER:?ACTIVEMQ_USER must be set (see .env.example)}
+      ACTIVEMQ_PASSWORD: ${ACTIVEMQ_PASSWORD:?ACTIVEMQ_PASSWORD must be set (see .env.example)}
       CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-http://localhost:3000}
     healthcheck:
       <<: *spring-healthcheck
@@ -111,3 +150,5 @@ networks:
 volumes:
   db-data:
     name: gym-crm-db-data
+  activemq-data:
+    name: gym-activemq-data

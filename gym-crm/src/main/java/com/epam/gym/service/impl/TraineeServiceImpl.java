@@ -12,8 +12,8 @@ import com.epam.gym.service.TraineeService;
 import com.epam.gym.util.PasswordGenerator;
 import com.epam.gym.util.UsernameGenerator;
 import com.epam.gym.workload.ActionType;
-import com.epam.gym.workload.TrainerWorkloadClient;
-import com.epam.gym.workload.TrainerWorkloadRequest;
+import com.epam.gym.workload.TrainerWorkloadPublisher;
+import com.epam.gym.workload.TrainerWorkloadMessage;
 import org.hibernate.Hibernate;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -40,7 +40,7 @@ public class TraineeServiceImpl implements TraineeService {
     private final UsernameGenerator usernameGenerator;
     private final PasswordGenerator passwordGenerator;
     private final PasswordEncoder passwordEncoder;
-    private final TrainerWorkloadClient trainerWorkloadClient;
+    private final TrainerWorkloadPublisher trainerWorkloadPublisher;
     private final GymMetrics metrics;
 
     public TraineeServiceImpl(TraineeDao traineeDao,
@@ -48,14 +48,14 @@ public class TraineeServiceImpl implements TraineeService {
                               UsernameGenerator usernameGenerator,
                               PasswordGenerator passwordGenerator,
                               PasswordEncoder passwordEncoder,
-                              TrainerWorkloadClient trainerWorkloadClient,
+                              TrainerWorkloadPublisher trainerWorkloadPublisher,
                               GymMetrics metrics) {
         this.traineeDao = traineeDao;
         this.trainerDao = trainerDao;
         this.usernameGenerator = usernameGenerator;
         this.passwordGenerator = passwordGenerator;
         this.passwordEncoder = passwordEncoder;
-        this.trainerWorkloadClient = trainerWorkloadClient;
+        this.trainerWorkloadPublisher = trainerWorkloadPublisher;
         this.metrics = metrics;
     }
 
@@ -118,7 +118,7 @@ public class TraineeServiceImpl implements TraineeService {
         List<Training> trainings = List.copyOf(trainee.getTrainings());
         traineeDao.delete(trainee);
         trainings.forEach(training ->
-                trainerWorkloadClient.updateWorkload(TrainerWorkloadRequest.of(training, ActionType.DELETE)));
+                trainerWorkloadPublisher.publish(TrainerWorkloadMessage.of(training, ActionType.DELETE)));
         log.info("Deleted trainee {} and removed {} trainings from trainer workloads", username, trainings.size());
     }
 

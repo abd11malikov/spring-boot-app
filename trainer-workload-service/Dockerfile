@@ -30,7 +30,7 @@ COPY --from=build /build/extracted/application/ ./
 USER workload
 EXPOSE 8081
 
-# No secrets here: the profile, EUREKA_URL and SERVICE_JWT_SECRET are supplied at container startup.
+# No secrets here: the profile, EUREKA_URL, SERVICE_JWT_SECRET and ACTIVEMQ_* are supplied at container startup.
 ENV JAVA_TOOL_OPTIONS="-XX:MaxRAMPercentage=75.0"
 
 HEALTHCHECK --interval=15s --timeout=5s --start-period=60s --retries=3 \
