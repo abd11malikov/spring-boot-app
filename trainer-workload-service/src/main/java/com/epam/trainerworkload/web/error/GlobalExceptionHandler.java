@@ -9,6 +9,7 @@ import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.web.HttpMediaTypeNotSupportedException;
 import org.springframework.web.HttpRequestMethodNotSupportedException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
+import org.springframework.web.bind.MissingServletRequestParameterException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.method.annotation.HandlerMethodValidationException;
@@ -51,6 +52,13 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(HttpMessageNotReadableException.class)
     public ResponseEntity<ErrorResponse> handleUnreadableBody(HttpServletRequest request) {
         return build(HttpStatus.BAD_REQUEST, "Request body is missing or malformed", request, List.of());
+    }
+
+    @ExceptionHandler(MissingServletRequestParameterException.class)
+    public ResponseEntity<ErrorResponse> handleMissingParameter(MissingServletRequestParameterException exception,
+                                                                HttpServletRequest request) {
+        return build(HttpStatus.BAD_REQUEST, "Parameter '" + exception.getParameterName() + "' is required",
+                request, List.of());
     }
 
     @ExceptionHandler(MethodArgumentTypeMismatchException.class)

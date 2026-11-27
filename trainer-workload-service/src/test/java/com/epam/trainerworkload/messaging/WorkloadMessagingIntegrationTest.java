@@ -1,5 +1,6 @@
 package com.epam.trainerworkload.messaging;
 
+import com.epam.trainerworkload.MongoTestContainer;
 import com.epam.trainerworkload.ServiceTokens;
 import com.epam.trainerworkload.repository.TrainerWorkloadRepository;
 import com.epam.trainerworkload.service.TrainerWorkloadService;
@@ -13,7 +14,9 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.jms.core.JmsTemplate;
 import org.springframework.test.annotation.DirtiesContext;
+import org.springframework.context.annotation.Import;
 import org.springframework.test.context.ActiveProfiles;
+import org.testcontainers.junit.jupiter.Testcontainers;
 import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 
 import java.time.Duration;
@@ -32,6 +35,8 @@ import static org.mockito.Mockito.doAnswer;
  */
 @SpringBootTest
 @ActiveProfiles("test")
+@Import(MongoTestContainer.class)
+@Testcontainers(disabledWithoutDocker = true)
 @DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_CLASS)
 class WorkloadMessagingIntegrationTest {
 
@@ -136,8 +141,13 @@ class WorkloadMessagingIntegrationTest {
         assertEquals(4, attempts.get());
     }
 
+    /**
+     * Sends a message the way Gym CRM does, grouped by trainer so one trainer's messages are handled in order.
+     */
     private void send(String payload, String authorization, String transactionId) {
+        String trainer = payload.replaceAll(".*\"trainerUsername\":\"([^\"]*)\".*", "$1");
         jms.convertAndSend(QUEUE, payload, message -> {
+            message.setStringProperty("JMSXGroupID", trainer);
             if (authorization != null) {
                 message.setStringProperty(WorkloadMessageHeaders.AUTHORIZATION, authorization);
             }

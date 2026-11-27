@@ -1,11 +1,12 @@
-# Gym platform container environment: Gym CRM with its PostgreSQL database, the Trainer Workload service,
-# the ActiveMQ broker between them and the Eureka discovery server, on one user-defined network.
+# Gym platform container environment: Gym CRM with its PostgreSQL database, the Trainer Workload service with
+# its MongoDB database, the ActiveMQ broker between them and the Eureka discovery server, on one user-defined
+# network.
 #
 # Credentials and keys are NOT stored here: Compose reads them from the environment or from a `.env` file
 # next to this file (copy .env.example to .env). Startup fails with a clear message if one is missing.
 #
 # Addressing:
-#   - containers reach each other by Compose service name (db, activemq, discovery-server), resolved by
+#   - containers reach each other by Compose service name (db, mongodb, activemq, discovery-server), resolved by
 #     Docker's DNS on gym-net; Gym CRM and Trainer Workload talk only through the trainer.workload queue;
 #   - both services register with Eureka under their names.
 #   No container IP address is configured anywhere.
@@ -37,6 +38,25 @@ services:
       interval: 5s
       timeout: 5s
       retries: 10
+    networks:
+      - gym-net
+    restart: unless-stopped
+
+  mongodb:
+    image: mongo:8.0
+    container_name: gym-mongodb
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_USERNAME:?MONGO_USERNAME must be set (see .env.example)}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_PASSWORD:?MONGO_PASSWORD must be set (see .env.example)}
+    volumes:
+      - mongo-data:/data/db
+    healthcheck:
+      test: ["CMD-SHELL", "mongosh --quiet --eval \"db.adminCommand('ping').ok\" | grep -q 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+    # Not published on the host: inspect it with `docker exec -it gym-mongodb mongosh -u <user> -p`
     networks:
       - gym-net
     restart: unless-stopped
@@ -88,14 +108,17 @@ services:
     build: ./trainer-workload-service
     image: gym-trainer-workload-service:1.0
     container_name: gym-trainer-workload-service
-    # Waits until Eureka and the broker answer their health checks, not merely until their containers started
+    # Waits until Eureka, the broker and MongoDB answer their health checks, not merely until their containers started
     depends_on:
       discovery-server:
         condition: service_healthy
       activemq:
         condition: service_healthy
+      mongodb:
+        condition: service_healthy
     environment:
       SPRING_PROFILES_ACTIVE: docker
+      MONGODB_URI: mongodb://${MONGO_USERNAME:?MONGO_USERNAME must be set (see .env.example)}:${MONGO_PASSWORD:?MONGO_PASSWORD must be set (see .env.example)}@mongodb:27017/trainer_workload?authSource=admin
       EUREKA_URL: *eureka-url
       SERVICE_JWT_SECRET: ${SERVICE_JWT_SECRET:?SERVICE_JWT_SECRET must be set (see .env.example)}
       ACTIVEMQ_URL: *activemq-url
@@ -152,3 +175,5 @@ volumes:
     name: gym-crm-db-data
   activemq-data:
     name: gym-activemq-data
+  mongo-data:
+    name: gym-mongo-data

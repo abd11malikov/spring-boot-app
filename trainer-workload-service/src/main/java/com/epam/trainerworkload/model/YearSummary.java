@@ -1,17 +1,32 @@
 package com.epam.trainerworkload.model;
 
+import jakarta.validation.Valid;
+import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.Min;
+import jakarta.validation.constraints.NotNull;
+
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Optional;
 
 /**
- * The months of one year in which a trainer has trainings, kept in calendar order.
+ * The months of one year in which a trainer has trainings, kept in calendar order (embedded in
+ * {@link TrainerWorkload}).
  */
 public class YearSummary {
 
-    private final int year;
-    private final List<MonthSummary> months = new ArrayList<>();
+    @Min(1900)
+    @Max(9999)
+    private int year;
+
+    @NotNull
+    @Valid
+    private List<MonthSummary> months = new ArrayList<>();
+
+    protected YearSummary() {
+        // for MongoDB mapping
+    }
 
     public YearSummary(int year) {
         this.year = year;
@@ -44,11 +59,5 @@ public class YearSummary {
 
     boolean isEmpty() {
         return months.isEmpty();
-    }
-
-    YearSummary copy() {
-        YearSummary copy = new YearSummary(year);
-        months.forEach(month -> copy.months.add(month.copy()));
-        return copy;
     }
 }

@@ -2,6 +2,8 @@ package com.epam.trainerworkload.service;
 
 import com.epam.trainerworkload.model.TrainerWorkload;
 
+import java.util.List;
+
 public interface TrainerWorkloadService {
 
     /**
@@ -19,4 +21,9 @@ public interface TrainerWorkloadService {
      * @throws java.util.NoSuchElementException for a trainer without any workload
      */
     MonthlyWorkload getMonthlyWorkload(String username, int year, int month);
+
+    /**
+     * @return the trainers with exactly this first and last name (several trainers may share a name)
+     */
+    List<TrainerWorkload> findByName(String firstName, String lastName);
 }

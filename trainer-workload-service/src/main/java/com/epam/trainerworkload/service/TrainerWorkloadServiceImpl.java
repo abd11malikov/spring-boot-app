@@ -7,8 +7,9 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
+import java.util.List;
 import java.util.NoSuchElementException;
-import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.Optional;
 
 @Service
 public class TrainerWorkloadServiceImpl implements TrainerWorkloadService {
@@ -44,29 +45,43 @@ public class TrainerWorkloadServiceImpl implements TrainerWorkloadService {
         return new MonthlyWorkload(username, year, month, minutes);
     }
 
+    @Override
+    public List<TrainerWorkload> findByName(String firstName, String lastName) {
+        List<TrainerWorkload> workloads = repository.findByFirstNameAndLastName(firstName, lastName);
+        log.debug("Found {} trainers named {} {}", workloads.size(), firstName, lastName);
+        return workloads;
+    }
+
+    /**
+     * Finds the trainer's document by username, or starts a new one; adds the training duration to the summary of
+     * the training's year and month (creating them if needed); saves the document.
+     */
     private void add(TrainerWorkloadUpdate update) {
-        repository.update(update.trainerUsername(), current -> {
-            TrainerWorkload workload = current != null ? current : new TrainerWorkload(update.trainerUsername(),
-                    update.trainerFirstName(), update.trainerLastName(), update.active());
-            workload.updateTrainer(update.trainerFirstName(), update.trainerLastName(), update.active());
-            workload.addTraining(update.trainingDate(), update.trainingDuration());
-            return workload;
-        });
-        log.info("Added {} minutes on {} to trainer {}", update.trainingDuration(), update.trainingDate(),
-                update.trainerUsername());
+        TrainerWorkload workload = repository.findByUsername(update.trainerUsername())
+                .orElseGet(() -> {
+                    log.info("No workload document for trainer {} yet, creating one", update.trainerUsername());
+                    return new TrainerWorkload(update.trainerUsername(), update.trainerFirstName(),
+                            update.trainerLastName(), update.active());
+                });
+        workload.updateTrainer(update.trainerFirstName(), update.trainerLastName(), update.active());
+        workload.addTraining(update.trainingDate(), update.trainingDuration());
+        repository.save(workload);
+        log.info("Added {} minutes on {} to trainer {}: {} minutes that month", update.trainingDuration(),
+                update.trainingDate(), update.trainerUsername(),
+                workload.getMonthlyDuration(update.trainingDate().getYear(), update.trainingDate().getMonthValue()));
     }
 
     private void delete(TrainerWorkloadUpdate update) {
-        AtomicBoolean removed = new AtomicBoolean();
-        repository.update(update.trainerUsername(), current -> {
-            if (current == null) {
-                return null;
-            }
-            current.updateTrainer(update.trainerFirstName(), update.trainerLastName(), update.active());
-            removed.set(current.removeTraining(update.trainingDate(), update.trainingDuration()));
-            return current;
-        });
-        if (removed.get()) {
+        Optional<TrainerWorkload> found = repository.findByUsername(update.trainerUsername());
+        if (found.isEmpty()) {
+            log.warn("Nothing to remove for trainer {}: no workload document", update.trainerUsername());
+            return;
+        }
+        TrainerWorkload workload = found.get();
+        workload.updateTrainer(update.trainerFirstName(), update.trainerLastName(), update.active());
+        boolean removed = workload.removeTraining(update.trainingDate(), update.trainingDuration());
+        repository.save(workload);
+        if (removed) {
             log.info("Removed {} minutes on {} from trainer {}", update.trainingDuration(), update.trainingDate(),
                     update.trainerUsername());
         } else {

@@ -106,19 +106,4 @@ class TrainerWorkloadTest {
         assertFalse(workload.isActive());
     }
 
-    @Test
-    void copy_isIndependentOfTheOriginal() {
-        // given
-        workload.addTraining(LocalDate.of(2026, 11, 3), 30);
-        TrainerWorkload copy = workload.copy();
-
-        // when
-        copy.addTraining(LocalDate.of(2026, 11, 4), 30);
-        copy.updateTrainer("Changed", "Name", false);
-
-        // then
-        assertEquals(30, workload.getMonthlyDuration(2026, 11));
-        assertEquals("Nodira", workload.getFirstName());
-        assertEquals(60, copy.getMonthlyDuration(2026, 11));
-    }
 }

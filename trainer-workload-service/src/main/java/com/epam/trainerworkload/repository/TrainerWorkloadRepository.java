@@ -1,22 +1,18 @@
 package com.epam.trainerworkload.repository;
 
 import com.epam.trainerworkload.model.TrainerWorkload;
+import org.springframework.data.mongodb.repository.MongoRepository;
 
+import java.util.List;
 import java.util.Optional;
-import java.util.function.UnaryOperator;
 
-public interface TrainerWorkloadRepository {
+/**
+ * Trainer workload documents in MongoDB. Search is by username (unique index); an update is a {@link #save} of a
+ * document found that way. The name search uses the {@code firstName + lastName} index.
+ */
+public interface TrainerWorkloadRepository extends MongoRepository<TrainerWorkload, String> {
 
-    /**
-     * @return a copy: changing it does not change the stored workload
-     */
     Optional<TrainerWorkload> findByUsername(String username);
 
-    /**
-     * Atomically replaces the workload of {@code username} with {@code change} applied to it.
-     * The function receives {@code null} for an unknown trainer and may return {@code null} to store nothing.
-     *
-     * @return a copy of the stored result
-     */
-    Optional<TrainerWorkload> update(String username, UnaryOperator<TrainerWorkload> change);
+    List<TrainerWorkload> findByFirstNameAndLastName(String firstName, String lastName);
 }
