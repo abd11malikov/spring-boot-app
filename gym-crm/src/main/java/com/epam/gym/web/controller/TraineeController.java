@@ -114,7 +114,7 @@ public class TraineeController {
             description = "Also deletes the trainee's trainings and removes them from the trainers' workloads")
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "Trainee deleted"),
-            @ApiResponse(responseCode = "503", description = "Trainer workload service unavailable, nothing deleted"),
+            @ApiResponse(responseCode = "503", description = "Workload update could not be queued, nothing deleted"),
             @ApiResponse(responseCode = "401", description = "Missing, invalid, expired or revoked token"),
             @ApiResponse(responseCode = "403", description = "Not your profile")
     })

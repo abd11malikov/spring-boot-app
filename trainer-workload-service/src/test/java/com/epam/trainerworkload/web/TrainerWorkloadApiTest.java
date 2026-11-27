@@ -1,6 +1,9 @@
 package com.epam.trainerworkload.web;
 
 import com.epam.trainerworkload.ServiceTokens;
+import com.epam.trainerworkload.model.ActionType;
+import com.epam.trainerworkload.service.TrainerWorkloadService;
+import com.epam.trainerworkload.service.TrainerWorkloadUpdate;
 import com.epam.trainerworkload.web.logging.TransactionIdFilter;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -14,6 +17,7 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.ResultActions;
 
 import java.time.Duration;
+import java.time.LocalDate;
 
 import static org.hamcrest.Matchers.startsWith;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -36,17 +40,18 @@ class TrainerWorkloadApiTest {
     @Autowired
     private MockMvc mockMvc;
 
+    @Autowired
+    private TrainerWorkloadService service;
+
     @Test
-    void addThenDelete_updatesMonthlySummary() throws Exception {
+    void getWorkload_returnsSummaryByYearAndMonth() throws Exception {
         // given
-        send(event("Api.Trainer", "2026-11-10", 60, "ADD")).andExpect(status().isOk());
-        send(event("Api.Trainer", "2026-11-12", 45, "ADD")).andExpect(status().isOk());
-        send(event("Api.Trainer", "2027-01-05", 30, "ADD")).andExpect(status().isOk());
+        apply("2026-11-10", 60, ActionType.ADD);
+        apply("2026-11-12", 45, ActionType.ADD);
+        apply("2027-01-05", 30, ActionType.ADD);
+        apply("2026-11-10", 60, ActionType.DELETE);
 
-        // when
-        send(event("Api.Trainer", "2026-11-10", 60, "DELETE")).andExpect(status().isOk());
-
-        // then
+        // when / then
         mockMvc.perform(get(URL + "/Api.Trainer").header(HttpHeaders.AUTHORIZATION, ServiceTokens.valid()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.trainerUsername").value("Api.Trainer"))
@@ -74,28 +79,6 @@ class TrainerWorkloadApiTest {
     }
 
     @Test
-    void invalidRequest_returns400WithViolations() throws Exception {
-        // when
-        ResultActions result = send("{\"trainerUsername\":\"\",\"trainingDuration\":-5}");
-
-        // then
-        result.andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.violations[?(@.field == 'actionType')]").exists())
-                .andExpect(jsonPath("$.violations[?(@.field == 'trainingDuration')]").exists())
-                .andExpect(jsonPath("$.violations[?(@.field == 'trainerUsername')]").exists());
-    }
-
-    @Test
-    void unknownActionType_returns400() throws Exception {
-        // when
-        ResultActions result = send(event("Api.Trainer", "2026-11-10", 60, "CANCEL"));
-
-        // then
-        result.andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.message").value("Request body is missing or malformed"));
-    }
-
-    @Test
     void invalidMonth_returns400() throws Exception {
         // when
         ResultActions result = mockMvc.perform(get(URL + "/Api.Trainer/years/2026/months/13")
@@ -119,8 +102,7 @@ class TrainerWorkloadApiTest {
     @Test
     void missingToken_returns401WithBearerChallenge() throws Exception {
         // when
-        ResultActions result = mockMvc.perform(post(URL).contentType(MediaType.APPLICATION_JSON)
-                .content(event("Api.Trainer", "2026-11-10", 60, "ADD")));
+        ResultActions result = mockMvc.perform(get(URL + "/Api.Trainer"));
 
         // then
         result.andExpect(status().isUnauthorized())
@@ -160,22 +142,13 @@ class TrainerWorkloadApiTest {
     }
 
     @Test
-    void wrongMethod_returns405() throws Exception {
-        // when
-        ResultActions result = mockMvc.perform(get(URL).header(HttpHeaders.AUTHORIZATION, ServiceTokens.valid()));
+    void updatesOverRest_areNotAccepted() throws Exception {
+        // when: workload changes arrive only as messages
+        ResultActions result = mockMvc.perform(post(URL + "/Api.Trainer").header(HttpHeaders.AUTHORIZATION, ServiceTokens.valid())
+                .contentType(MediaType.APPLICATION_JSON).content("{}"));
 
         // then
         result.andExpect(status().isMethodNotAllowed());
-    }
-
-    @Test
-    void wrongContentType_returns415() throws Exception {
-        // when
-        ResultActions result = mockMvc.perform(post(URL).header(HttpHeaders.AUTHORIZATION, ServiceTokens.valid())
-                .contentType(MediaType.TEXT_PLAIN).content("hello"));
-
-        // then
-        result.andExpect(status().isUnsupportedMediaType());
     }
 
     @Test
@@ -196,16 +169,9 @@ class TrainerWorkloadApiTest {
                 .andExpect(jsonPath("$.components.securitySchemes.serviceToken.scheme").value("bearer"));
     }
 
-    private ResultActions send(String body) throws Exception {
-        return mockMvc.perform(post(URL)
-                .header(HttpHeaders.AUTHORIZATION, ServiceTokens.valid())
-                .contentType(MediaType.APPLICATION_JSON)
-                .content(body));
-    }
 
-    private static String event(String username, String date, int duration, String action) {
-        return "{\"trainerUsername\":\"" + username + "\",\"trainerFirstName\":\"Nodira\","
-                + "\"trainerLastName\":\"Karimova\",\"isActive\":true,\"trainingDate\":\"" + date + "\","
-                + "\"trainingDuration\":" + duration + ",\"actionType\":\"" + action + "\"}";
+    private void apply(String date, int minutes, ActionType action) {
+        service.apply(new TrainerWorkloadUpdate("Api.Trainer", "Nodira", "Karimova", true, LocalDate.parse(date),
+                minutes, action));
     }
 }

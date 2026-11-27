@@ -25,7 +25,8 @@ class RequiredPropertiesInitializerTest {
 
         // then
         assertEquals("The following properties were declared as required but could not be resolved: "
-                + "[DB_URL, DB_USERNAME, DB_PASSWORD, JWT_SECRET, SERVICE_JWT_SECRET, EUREKA_URL]", exception.getMessage());
+                + "[DB_URL, DB_USERNAME, DB_PASSWORD, JWT_SECRET, SERVICE_JWT_SECRET, EUREKA_URL, "
+                + "ACTIVEMQ_URL, ACTIVEMQ_USER, ACTIVEMQ_PASSWORD]", exception.getMessage());
     }
 
     @Test
@@ -37,7 +38,10 @@ class RequiredPropertiesInitializerTest {
                 .withProperty("DB_PASSWORD", "secret")
                 .withProperty("JWT_SECRET", "c2VjcmV0")
                 .withProperty("SERVICE_JWT_SECRET", "c2VjcmV0")
-                .withProperty("EUREKA_URL", "http://discovery-server:8761/eureka/");
+                .withProperty("EUREKA_URL", "http://discovery-server:8761/eureka/")
+                .withProperty("ACTIVEMQ_URL", "tcp://activemq:61616")
+                .withProperty("ACTIVEMQ_USER", "gym")
+                .withProperty("ACTIVEMQ_PASSWORD", "secret");
         StaticApplicationContext context = contextWith(environment, "stg");
 
         // when

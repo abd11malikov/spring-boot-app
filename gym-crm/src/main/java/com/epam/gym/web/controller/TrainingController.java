@@ -37,7 +37,7 @@ public class TrainingController {
             @ApiResponse(responseCode = "401", description = "Missing, invalid, expired or revoked token"),
             @ApiResponse(responseCode = "403", description = "Caller is neither the trainee nor the trainer"),
             @ApiResponse(responseCode = "404", description = "Trainee or trainer not found"),
-            @ApiResponse(responseCode = "503", description = "Trainer workload service unavailable, nothing saved")
+            @ApiResponse(responseCode = "503", description = "Workload update could not be queued, nothing saved")
     })
     public void addTraining(@AuthenticationPrincipal String currentUser,
                             @Valid @RequestBody AddTrainingRequest request) {
