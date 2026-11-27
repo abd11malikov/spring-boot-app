@@ -1,0 +1,27 @@
+# Override of ../compose.yml for the integration tests (project gym-crm-it): own container, network and volume names, so a test run
+# never touches (or deletes) the containers and data of a development stack started from compose.yml.
+services:
+  db:
+    container_name: gym-it-crm-db
+  mongodb:
+    container_name: gym-it-mongodb
+  activemq:
+    container_name: gym-it-activemq
+  discovery-server:
+    container_name: gym-it-discovery-server
+  trainer-workload-service:
+    container_name: gym-it-trainer-workload-service
+  gym-crm:
+    container_name: gym-it-crm-app
+
+networks:
+  gym-net:
+    name: gym-it-net
+
+volumes:
+  db-data:
+    name: gym-it-crm-db-data
+  activemq-data:
+    name: gym-it-activemq-data
+  mongo-data:
+    name: gym-it-mongo-data

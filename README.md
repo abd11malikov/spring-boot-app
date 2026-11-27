@@ -569,22 +569,59 @@ Both API services log on two levels:
 mvn clean verify
 ```
 
+Builds the three services and runs their unit, integration and Cucumber component tests. Docker must be running, because
+the Trainer Workload tests start a MongoDB container.
+
+```bash
+mvn clean verify -Pintegration-tests
+```
+
+Also runs the Cucumber integration tests of the whole platform (see below). They build the images and start the Compose
+stack, so they take a few minutes.
+
 | Service | Tests | Line coverage | Highlights |
 |---|---|---|---|
-| Gym CRM | 264 | 97 % | unit, controller, DAO, security end-to-end, full API journey; on an embedded broker, `WorkloadMessagingIntegrationTest` checks the JSON body, token, transaction id and message group, and that a rolled-back transaction sends nothing; `BrokerUnavailableIntegrationTest` checks the `503`, the rollback and the circuit opening |
-| Trainer Workload | 58 | 97 % | model and aggregation rules, service flow with a mocked repository; on a MongoDB container (Testcontainers), the repository: search and update by username, search by name, both indexes, unique username, validation before saving, optimistic locking; read API with real signed tokens; message reader and listener unit tests; on an embedded broker, valid messages, dead letters for missing fields and missing token, redelivery after a transient failure, and dead-lettering after 4 failed attempts |
+| Gym CRM | 286, including 22 Cucumber scenarios | 97 % | unit, controller, DAO, security end-to-end, full API journey; on an embedded broker, `WorkloadMessagingIntegrationTest` checks the JSON body, token, transaction id and message group, and that a rolled-back transaction sends nothing; `BrokerUnavailableIntegrationTest` checks the `503`, the rollback and the circuit opening |
+| Trainer Workload | 76, including 18 Cucumber scenarios | 97 % | model and aggregation rules, service flow with a mocked repository; on a MongoDB container (Testcontainers), the repository: search and update by username, search by name, both indexes, unique username, validation before saving, optimistic locking; read API with real signed tokens; message reader and listener unit tests; on an embedded broker, valid messages, dead letters for missing fields and missing token, redelivery after a transient failure, and dead-lettering after 4 failed attempts |
 | Discovery server | 2 | — | registry starts and serves the Eureka API |
+| Platform (`integration-tests`) | 9 Cucumber scenarios | — | both services together on the real containers |
 
 JaCoCo fails the build of an API service if line coverage drops below 80 %. Reports are in
-`<service>/target/site/jacoco/index.html`.
+`<service>/target/site/jacoco/index.html`, and Cucumber reports in `<module>/target/cucumber-reports/*.html`.
+
+### BDD with Cucumber
+
+The behavior is described in Gherkin feature files (`Given` / `When` / `Then`), each with positive and negative
+scenarios, and run with Cucumber 7 on the JUnit Platform (`@Suite` runners). Scenarios are independent: each starts
+from its own accounts, an emptied queue or database, and a fresh scenario-scoped state.
+
+**Component tests** run one service at a time: the whole service (REST API, security, persistence, JMS), with its
+neighbors replaced by test doubles.
+
+| Service | Feature files (`src/test/resources/features/component/`) | Test doubles |
+|---|---|---|
+| Gym CRM | `registration`: registering, duplicate names, missing fields, unknown specialization. `security`: login, wrong password, blocking after 3 failures, logout, missing token. `profiles`: own vs someone else's profile, unknown trainee. `trainings`: the ADD message with token and transaction id, DELETE messages when a trainee is deleted, a training for someone else, invalid trainings | H2 instead of PostgreSQL; an embedded broker whose queue the scenarios read in place of the Trainer Workload service |
+| Trainer Workload | `workload_messages`: creating the document, adding up by month and year, cancelling, unknown trainer, dead letters for a missing or foreign token, missing fields, an invalid duration, an unknown action, malformed JSON. `workload_api`: summary, one month, empty month, search by name, unknown trainer, invalid month, missing token | the scenarios play Gym CRM on an embedded broker; MongoDB is real, in a container |
+
+**Integration tests** (`integration-tests/`, `features/integration/`) check the microservices together, as black boxes
+over HTTP. `Platform` starts compose.yml with the Docker Compose CLI: images built from the current sources, secrets
+generated for the run, random free host ports, and `up --wait` until every health check passes. It uses its own project
+name plus `compose.it.yml` (own container, network and volume names), so a development stack is never touched, and it
+removes everything at the end.
+
+| Feature | Scenarios |
+|---|---|
+| `workload_sync` | both services registered in Eureka; a training added in Gym CRM shows up in the trainer's monthly workload; trainings add up per month; deleting the trainee removes them; the transaction id appears in both services' logs; an invalid training or one added by an outsider is rejected and never counted |
+| `resilience` | trainings added while the Trainer Workload service is stopped are counted once it is back; while the broker is stopped Gym CRM answers `503` and saves nothing, and works again once the broker is back |
 
 ## Repository layout
 
 ```
 .
-├── pom.xml                         aggregator of the three services
+├── pom.xml                         aggregator of the three services (+ integration-tests with -Pintegration-tests)
 ├── compose.yml, .env.example       container environment (PostgreSQL, MongoDB, ActiveMQ, Eureka, both services)
 ├── monitoring/prometheus.yml
+├── integration-tests/              Cucumber integration tests on the Compose stack (compose.it.yml override)
 ├── discovery-server/               Eureka server (@EnableEurekaServer)
 ├── trainer-workload-service/
 │   └── src/main/java/com/epam/trainerworkload

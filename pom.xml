@@ -18,4 +18,14 @@
         <module>trainer-workload-service</module>
         <module>gym-crm</module>
     </modules>
+
+    <profiles>
+        <profile>
+            <!-- mvn verify -Pintegration-tests: also runs the Cucumber integration tests on the Compose stack -->
+            <id>integration-tests</id>
+            <modules>
+                <module>integration-tests</module>
+            </modules>
+        </profile>
+    </profiles>
 </project>
