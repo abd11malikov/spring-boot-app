@@ -1,5 +1,14 @@
 package com.epam.trainerworkload.model;
 
+import jakarta.validation.Valid;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
+import org.springframework.data.annotation.Id;
+import org.springframework.data.annotation.Version;
+import org.springframework.data.mongodb.core.index.CompoundIndex;
+import org.springframework.data.mongodb.core.index.Indexed;
+import org.springframework.data.mongodb.core.mapping.Document;
+
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -7,23 +16,50 @@ import java.util.List;
 import java.util.Optional;
 
 /**
- * A trainer and the summary duration of their trainings per year and month.
+ * Trainer's training summary: one MongoDB document per trainer, with the summary duration of their trainings per
+ * year and month embedded.
  * <p>
- * Not thread-safe: the repository applies changes atomically per trainer and hands out copies.
+ * Indexes: {@code username} is unique (every lookup is by username), and {@code firstName + lastName} supports
+ * searching trainers by name. {@link Version} makes concurrent updates of one trainer fail instead of overwriting
+ * each other.
  */
+@Document(collection = "trainer_workloads")
+@CompoundIndex(name = "trainer_name_idx", def = "{'firstName': 1, 'lastName': 1}")
 public class TrainerWorkload {
 
-    private final String username;
+    @Id
+    private String id;
+
+    @Version
+    private Long version;
+
+    @NotBlank
+    @Indexed(name = "trainer_username_idx", unique = true)
+    private String username;
+
+    @NotBlank
     private String firstName;
+
+    @NotBlank
     private String lastName;
-    private boolean active;
-    private final List<YearSummary> years = new ArrayList<>();
+
+    /** Trainer status: {@code true} when active. */
+    @NotNull
+    private Boolean status;
+
+    @NotNull
+    @Valid
+    private List<YearSummary> years = new ArrayList<>();
+
+    protected TrainerWorkload() {
+        // for MongoDB mapping
+    }
 
     public TrainerWorkload(String username, String firstName, String lastName, boolean active) {
         this.username = username;
         this.firstName = firstName;
         this.lastName = lastName;
-        this.active = active;
+        this.status = active;
     }
 
     /**
@@ -32,9 +68,12 @@ public class TrainerWorkload {
     public void updateTrainer(String firstName, String lastName, boolean active) {
         this.firstName = firstName;
         this.lastName = lastName;
-        this.active = active;
+        this.status = active;
     }
 
+    /**
+     * Adds the training's duration to the summary of its year and month, creating them if needed.
+     */
     public void addTraining(LocalDate date, int durationMinutes) {
         getOrCreateYear(date.getYear()).getOrCreateMonth(date.getMonthValue()).add(durationMinutes);
     }
@@ -72,10 +111,8 @@ public class TrainerWorkload {
         return years.stream().filter(summary -> summary.getYear() == year).findFirst();
     }
 
-    public TrainerWorkload copy() {
-        TrainerWorkload copy = new TrainerWorkload(username, firstName, lastName, active);
-        years.forEach(year -> copy.years.add(year.copy()));
-        return copy;
+    public String getId() {
+        return id;
     }
 
     public String getUsername() {
@@ -91,7 +128,7 @@ public class TrainerWorkload {
     }
 
     public boolean isActive() {
-        return active;
+        return Boolean.TRUE.equals(status);
     }
 
     public List<YearSummary> getYears() {

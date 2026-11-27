@@ -1,5 +1,6 @@
 package com.epam.trainerworkload.web;
 
+import com.epam.trainerworkload.MongoTestContainer;
 import com.epam.trainerworkload.ServiceTokens;
 import com.epam.trainerworkload.model.ActionType;
 import com.epam.trainerworkload.service.TrainerWorkloadService;
@@ -12,7 +13,9 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.test.annotation.DirtiesContext;
+import org.springframework.context.annotation.Import;
 import org.springframework.test.context.ActiveProfiles;
+import org.testcontainers.junit.jupiter.Testcontainers;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.ResultActions;
 
@@ -32,6 +35,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @SpringBootTest
 @AutoConfigureMockMvc
 @ActiveProfiles("test")
+@Import(MongoTestContainer.class)
+@Testcontainers(disabledWithoutDocker = true)
 @DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_CLASS)
 class TrainerWorkloadApiTest {
 
@@ -65,6 +70,36 @@ class TrainerWorkloadApiTest {
                         .header(HttpHeaders.AUTHORIZATION, ServiceTokens.valid()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.trainingSummaryDuration").value(45));
+    }
+
+    @Test
+    void findByName_returnsTrainersWithThatName() throws Exception {
+        // given
+        service.apply(new TrainerWorkloadUpdate("Named.Trainer", "Lola", "Rahimova", true,
+                LocalDate.of(2026, 11, 10), 30, ActionType.ADD));
+
+        // when / then
+        mockMvc.perform(get(URL).param("firstName", "Lola").param("lastName", "Rahimova")
+                        .header(HttpHeaders.AUTHORIZATION, ServiceTokens.valid()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(1))
+                .andExpect(jsonPath("$[0].trainerUsername").value("Named.Trainer"))
+                .andExpect(jsonPath("$[0].years[0].months[0].trainingSummaryDuration").value(30));
+        mockMvc.perform(get(URL).param("firstName", "Nobody").param("lastName", "Here")
+                        .header(HttpHeaders.AUTHORIZATION, ServiceTokens.valid()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(0));
+    }
+
+    @Test
+    void findByName_missingOrBlankName_returns400() throws Exception {
+        mockMvc.perform(get(URL).param("firstName", "Lola").header(HttpHeaders.AUTHORIZATION, ServiceTokens.valid()))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value("Parameter 'lastName' is required"));
+        mockMvc.perform(get(URL).param("firstName", "Lola").param("lastName", " ")
+                        .header(HttpHeaders.AUTHORIZATION, ServiceTokens.valid()))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.violations[0].field").value("lastName"));
     }
 
     @Test

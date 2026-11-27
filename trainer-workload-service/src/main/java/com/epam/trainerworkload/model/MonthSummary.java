@@ -1,12 +1,24 @@
 package com.epam.trainerworkload.model;
 
+import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.Min;
+import jakarta.validation.constraints.PositiveOrZero;
+
 /**
- * Total training minutes of one trainer in one month.
+ * Total training minutes of one trainer in one month (embedded in {@link TrainerWorkload}).
  */
 public class MonthSummary {
 
-    private final int month;
+    @Min(1)
+    @Max(12)
+    private int month;
+
+    @PositiveOrZero
     private long trainingSummaryDuration;
+
+    protected MonthSummary() {
+        // for MongoDB mapping
+    }
 
     public MonthSummary(int month, long trainingSummaryDuration) {
         this.month = month;
@@ -23,9 +35,5 @@ public class MonthSummary {
 
     void add(long minutes) {
         trainingSummaryDuration += minutes;
-    }
-
-    MonthSummary copy() {
-        return new MonthSummary(month, trainingSummaryDuration);
     }
 }

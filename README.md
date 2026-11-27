@@ -5,8 +5,9 @@ A gym CRM system split into microservices:
 | Service | Folder | Port | Role |
 |---|---|---|---|
 | **Gym CRM** | [`gym-crm/`](gym-crm) | 8080 | main REST API: trainees, trainers, trainings, security; PostgreSQL |
-| **Trainer Workload** | [`trainer-workload-service/`](trainer-workload-service) | 8081 | each trainer's training minutes per month, in an in-memory database |
+| **Trainer Workload** | [`trainer-workload-service/`](trainer-workload-service) | 8081 | each trainer's training minutes per month; MongoDB |
 | **ActiveMQ** | image `apache/activemq-classic` | 61616, console 8161 | message broker between the two services |
+| **MongoDB** | image `mongo:8.0` | 27017 (not published) | Trainer Workload's database |
 | **Discovery server** | [`discovery-server/`](discovery-server) | 8761 | Eureka registry the services register with |
 
 Every time a training is added in Gym CRM, or deleted with its trainee, Gym CRM puts a message on the
@@ -26,18 +27,18 @@ on its own. The root `pom.xml` only aggregates them, and the root `compose.yml` 
 | Messaging | ActiveMQ Classic 6.1, Spring JMS (`JmsTemplate`, `@JmsListener`), JSON messages (Jackson) |
 | Microservices | Spring Cloud 2025.0: Netflix Eureka (server and client), CircuitBreaker with Resilience4j |
 | Security | Spring Security 6, BCrypt, JWT (JJWT in Gym CRM; OAuth2 resource server in Trainer Workload) |
-| Persistence | Gym CRM: Hibernate 6.6 (JPA), HikariCP, PostgreSQL. Trainer Workload: in-memory store |
+| Persistence | Gym CRM: Hibernate 6.6 (JPA), HikariCP, PostgreSQL. Trainer Workload: Spring Data MongoDB, MongoDB 8 |
 | Monitoring | Spring Boot Actuator, Micrometer, Prometheus |
 | API docs | OpenAPI 3 / Swagger UI (springdoc) in both API services |
 | Logging | SLF4J + Logback, transaction id shared across services |
 | Containers | Docker multi-stage builds, Docker Compose |
-| Tests | JUnit 5, Mockito, Spring Boot Test, MockMvc, H2, embedded ActiveMQ, Awaitility, JaCoCo (≥ 80 % line coverage enforced) |
+| Tests | JUnit 5, Mockito, Spring Boot Test, MockMvc, H2, embedded ActiveMQ, Testcontainers (MongoDB), Awaitility, JaCoCo (≥ 80 % line coverage enforced) |
 
 ## Prerequisites
 
 - JDK 17+ and Maven 3.9+ (or the ones bundled with IntelliJ IDEA)
 - PostgreSQL to run Gym CRM outside Docker (tests use H2)
-- or just **Docker** with Compose v2 to run everything in containers
+- **Docker**: the Trainer Workload tests start a MongoDB container (Testcontainers), and Docker Compose runs everything
 
 ## Building
 
@@ -55,27 +56,28 @@ mvn -f trainer-workload-service/pom.xml verify
 
 ## Running with Docker (recommended)
 
-Only Docker is needed on the host. The five containers share the user-defined network `gym-net`.
+Only Docker is needed on the host. The six containers share the user-defined network `gym-net`.
 
 | Compose service | Image | Container | Published port | Depends on |
 |---|---|---|---|---|
 | `db` | `postgres:17-alpine` | `gym-crm-db` | — | — |
+| `mongodb` | `mongo:8.0` | `gym-mongodb` | — | — |
 | `activemq` | `apache/activemq-classic:6.1.8` | `gym-activemq` | `ACTIVEMQ_CONSOLE_PORT` (8161) | — |
 | `discovery-server` | `gym-discovery-server:1.0` | `gym-discovery-server` | `EUREKA_PORT` (8761) | — |
-| `trainer-workload-service` | `gym-trainer-workload-service:1.0` | `gym-trainer-workload-service` | `WORKLOAD_PORT` (8081) | `discovery-server`, `activemq` healthy |
+| `trainer-workload-service` | `gym-trainer-workload-service:1.0` | `gym-trainer-workload-service` | `WORKLOAD_PORT` (8081) | `mongodb`, `discovery-server`, `activemq` healthy |
 | `gym-crm` | `gym-crm:1.0` | `gym-crm-app` | `APP_PORT` (8080) | `db`, `discovery-server`, `activemq` healthy |
 
 | File | Purpose |
 |---|---|
 | `*/Dockerfile` | one per service. Multi-stage build: Maven + JDK 17 builds the jar, a JRE 17 image (multi-arch, so it also runs on Apple Silicon) runs it as a non-root user, with a `HEALTHCHECK` on `/actuator/health` |
 | `*/.dockerignore` | keeps `target/`, `.git/`, IDE files and `.env` out of each build context |
-| `compose.yml` | the five services, health checks, start order, the `gym-net` network, and the `gym-crm-db-data` and `gym-activemq-data` volumes |
+| `compose.yml` | the six services, health checks, start order, the `gym-net` network, and the `gym-crm-db-data`, `gym-mongo-data` and `gym-activemq-data` volumes |
 | `.env.example` | template for the credentials, keys and ports Compose reads at startup |
 | `application-docker.properties` | the `docker` Spring profile of each API service: settings come only from environment variables, logs go to stdout |
 
 ### Start
 
-Create your `.env` from the template once. Set the database and broker passwords and two **different** keys, generating
+Create your `.env` from the template once. Set the PostgreSQL, MongoDB and broker passwords and two **different** keys, generating
 each with `openssl rand -base64 32`: `JWT_SECRET` for user tokens and `SERVICE_JWT_SECRET` for service-to-service tokens.
 
 ```bash
@@ -158,6 +160,7 @@ container startup as environment variables:
 | `EUREKA_URL` | Gym CRM, Trainer Workload | `http://discovery-server:8761/eureka/`, set in `compose.yml` |
 | `ACTIVEMQ_URL` | Gym CRM, Trainer Workload | `tcp://activemq:61616?connectionTimeout=3000`, set in `compose.yml` |
 | `ACTIVEMQ_USER`, `ACTIVEMQ_PASSWORD` | ActiveMQ, Gym CRM, Trainer Workload | broker login (the broker requires it) |
+| `MONGO_USERNAME`, `MONGO_PASSWORD` | MongoDB | root user; Compose builds the workload service's `MONGODB_URI` from them (host `mongodb`). Use only letters and digits in the password. |
 | `EUREKA_HOSTNAME` | discovery server | `discovery-server`, its name on the network |
 | `APP_PORT`, `WORKLOAD_PORT`, `EUREKA_PORT`, `ACTIVEMQ_CONSOLE_PORT` | Compose | host ports |
 
@@ -165,8 +168,8 @@ The `docker` profile has no defaults for these: a service with a missing variabl
 
 ### Each service on its own
 
-The images are independent. For example, the Trainer Workload service runs with plain Docker next to a registry and
-a broker:
+The images are independent. For example, the Trainer Workload service runs with plain Docker next to a registry,
+a broker and MongoDB:
 
 ```bash
 docker network create gym-net
@@ -177,11 +180,15 @@ docker run -d --name discovery-server --network gym-net -p 8761:8761 -e EUREKA_H
 ```
 
 ```bash
+docker run -d --name mongodb --network gym-net -e MONGO_INITDB_ROOT_USERNAME=workload -e MONGO_INITDB_ROOT_PASSWORD=<password> mongo:8.0
+```
+
+```bash
 docker run -d --name activemq --network gym-net -p 8161:8161 -e ACTIVEMQ_CONNECTION_USER=gym -e ACTIVEMQ_CONNECTION_PASSWORD=<password> apache/activemq-classic:6.1.8
 ```
 
 ```bash
-docker run -d --name trainer-workload-service --network gym-net -p 8081:8081 -e SPRING_PROFILES_ACTIVE=docker -e EUREKA_URL=http://discovery-server:8761/eureka/ -e SERVICE_JWT_SECRET=<base64 key> -e ACTIVEMQ_URL=tcp://activemq:61616 -e ACTIVEMQ_USER=gym -e ACTIVEMQ_PASSWORD=<password> gym-trainer-workload-service:1.0
+docker run -d --name trainer-workload-service --network gym-net -p 8081:8081 -e SPRING_PROFILES_ACTIVE=docker -e EUREKA_URL=http://discovery-server:8761/eureka/ -e SERVICE_JWT_SECRET=<base64 key> -e ACTIVEMQ_URL=tcp://activemq:61616 -e ACTIVEMQ_USER=gym -e ACTIVEMQ_PASSWORD=<password> -e MONGODB_URI='mongodb://workload:<password>@mongodb:27017/trainer_workload?authSource=admin' gym-trainer-workload-service:1.0
 ```
 
 ```bash
@@ -237,8 +244,10 @@ dead letter queue and acknowledging it happen in the same transacted session.
   threads of one instance or several instances.
 - **Per-trainer ordering:** message groups (`JMSXGroupID`) keep one trainer's messages on one consumer at a time, so a
   `DELETE` is never handled before the `ADD` it cancels.
-- **Store:** the workload store is in memory, so each instance has its own data. Scaling out to several *instances*
-  needs a shared database (for example MongoDB); scaling the *consumers* of one instance is safe today.
+- **Shared store:** every instance and consumer works on the same MongoDB collection. Message groups serialize one
+  trainer's updates, and the document's `@Version` turns any concurrent update that slips through into a retry
+  (redelivery) instead of a lost update. A unique index on `username` stops two consumers from creating the same
+  trainer twice.
 
 ### Configuration per environment (profiles)
 
@@ -251,11 +260,11 @@ dead letter queue and acknowledging it happen in the same transacted session.
 
 ### Health and startup
 
-- Every container has a health check: `/actuator/health` for the Spring services, `pg_isready` for PostgreSQL, and the
-  OpenWire port for ActiveMQ. `docker compose ps` shows `healthy` only once the application is ready, not just its
+- Every container has a health check: `/actuator/health` for the Spring services, `pg_isready` for PostgreSQL, a
+  `ping` command for MongoDB, and the OpenWire port for ActiveMQ. `docker compose ps` shows `healthy` only once the application is ready, not just its
   container.
-- Gym CRM and Trainer Workload wait for `activemq` and `discovery-server` to be **healthy**, and Gym CRM also waits for
-  `db`.
+- Gym CRM and Trainer Workload wait for `activemq` and `discovery-server` to be **healthy**. Gym CRM also waits for
+  `db`, and Trainer Workload for `mongodb`.
 - If the broker restarts, both services reconnect by themselves. If Eureka restarts, they register again on their next
   heartbeat (every 10 s).
 
@@ -308,11 +317,16 @@ docker compose stop activemq
 
 ## Running without Docker
 
-Start a local broker first, then the services in this order, each in its own terminal. The `local` profile (the
-default) uses ActiveMQ on `localhost:61616` (`admin`/`admin`), Eureka on `localhost:8761` and built-in development keys.
+Start a local broker and MongoDB first, then the services in this order, each in its own terminal. The `local`
+profile (the default) uses ActiveMQ on `localhost:61616` (`admin`/`admin`), MongoDB on `localhost:27017` (database
+`trainer_workload`, no authentication), Eureka on `localhost:8761` and built-in development keys.
 
 ```bash
 docker run -d --name activemq -p 61616:61616 -p 8161:8161 apache/activemq-classic:6.1.8
+```
+
+```bash
+docker run -d --name mongodb -p 27017:27017 mongo:8.0
 ```
 
 ```bash
@@ -362,6 +376,7 @@ need a service token (`Authorization: Bearer <JWT signed by Gym CRM>`).
 
 | Operation | Method and path | Response |
 |---|---|---|
+| Trainers' summaries by name | `GET /api/trainer-workloads?firstName=&lastName=` | `200` with a list (empty if nobody matches), `400` if a name is missing |
 | Trainer's summary by year and month | `GET /api/trainer-workloads/{username}` | `200`, or `404` for an unknown trainer |
 | Trainer's minutes in one month | `GET /api/trainer-workloads/{username}/years/{year}/months/{month}` | `200` (0 for a month without trainings), `404` |
 
@@ -393,17 +408,55 @@ Summary (`trainingSummaryDuration` is in minutes):
 }
 ```
 
-### Behavior
+### MongoDB schema
 
-- `ADD` adds the duration to the training's month, creating the trainer, year and month as needed. The trainer's name
-  and status are updated to the values sent with each training.
-- `DELETE` subtracts the duration. A month that drops to zero is removed, and so is a year without months. Deleting from
-  a month without workload changes nothing and is logged as a warning.
-- REST errors use the same JSON shape as Gym CRM: `400` for an invalid year or month, `401` for a missing or invalid
-  token, `404`, `405`. Unexpected errors are logged and answered without internal details.
-- The store (`InMemoryTrainerWorkloadRepository`) keeps workloads in memory, so they are lost on restart. A stored
-  workload is never modified: an update works on a copy that is swapped in atomically, so concurrent updates of one
-  trainer don't lose each other's changes.
+One document per trainer in the `trainer_workloads` collection (`TrainerWorkload` with embedded `YearSummary` and
+`MonthSummary`):
+
+```json
+{
+  "_id": ObjectId("..."),
+  "version": 2,
+  "username": "Nodira.Karimova",
+  "firstName": "Nodira",
+  "lastName": "Karimova",
+  "status": true,
+  "years": [
+    { "year": 2026, "months": [ { "month": 11, "trainingSummaryDuration": 120 } ] }
+  ]
+}
+```
+
+| Field | Type | Rules |
+|---|---|---|
+| `username` | string | required, **unique index** `trainer_username_idx` |
+| `firstName`, `lastName` | string | required, **compound index** `trainer_name_idx` for the search by name |
+| `status` | boolean | required: trainer is active |
+| `years[].year` | number | 1900–9999 |
+| `years[].months[].month` | number | 1–12 |
+| `years[].months[].trainingSummaryDuration` | number (Int64) | minutes, ≥ 0 |
+| `version` | number | optimistic locking (`@Version`) |
+
+The indexes are declared on the document class and created at startup (`spring.data.mongodb.auto-index-creation`).
+The Bean Validation rules are checked before every save (`ValidatingMongoEventListener`), and every incoming message
+is validated before it reaches the service.
+
+### Repository and service
+
+`TrainerWorkloadRepository` is a Spring Data `MongoRepository`: `findByUsername` finds the document, `save` updates it,
+and `findByFirstNameAndLastName` uses the name index. `TrainerWorkloadServiceImpl` handles each message:
+
+1. Look the trainer's document up by username.
+2. If there is none, create it with the trainer's data and a year and month taken from the training date.
+3. Find the summary of the training's year and month, creating it if needed.
+4. `ADD`: add the training duration to its summary duration. `DELETE`: subtract it; a month that drops to zero is
+   removed, and so is a year without months. Deleting from a month without workload changes nothing and is logged as
+   a warning.
+5. Update the trainer's name and status to the values in the message, and save the document.
+
+Workloads now survive restarts, and REST errors use the same JSON shape as Gym CRM: `400` for an invalid year, month or
+missing name, `401` for a missing or invalid token, `404`, `405`. Unexpected errors are logged and answered without
+internal details.
 
 ## Gym CRM
 
@@ -519,7 +572,7 @@ mvn clean verify
 | Service | Tests | Line coverage | Highlights |
 |---|---|---|---|
 | Gym CRM | 264 | 97 % | unit, controller, DAO, security end-to-end, full API journey; on an embedded broker, `WorkloadMessagingIntegrationTest` checks the JSON body, token, transaction id and message group, and that a rolled-back transaction sends nothing; `BrokerUnavailableIntegrationTest` checks the `503`, the rollback and the circuit opening |
-| Trainer Workload | 51 | 97 % | model and aggregation rules, concurrent updates of the in-memory store, read API with real signed tokens; message reader and listener unit tests; on an embedded broker, valid messages, dead letters for missing fields and missing token, redelivery after a transient failure, and dead-lettering after 4 failed attempts |
+| Trainer Workload | 58 | 97 % | model and aggregation rules, service flow with a mocked repository; on a MongoDB container (Testcontainers), the repository: search and update by username, search by name, both indexes, unique username, validation before saving, optimistic locking; read API with real signed tokens; message reader and listener unit tests; on an embedded broker, valid messages, dead letters for missing fields and missing token, redelivery after a transient failure, and dead-lettering after 4 failed attempts |
 | Discovery server | 2 | — | registry starts and serves the Eureka API |
 
 JaCoCo fails the build of an API service if line coverage drops below 80 %. Reports are in
@@ -530,17 +583,17 @@ JaCoCo fails the build of an API service if line coverage drops below 80 %. Repo
 ```
 .
 ├── pom.xml                         aggregator of the three services
-├── compose.yml, .env.example       container environment (PostgreSQL, ActiveMQ, Eureka, both services)
+├── compose.yml, .env.example       container environment (PostgreSQL, MongoDB, ActiveMQ, Eureka, both services)
 ├── monitoring/prometheus.yml
 ├── discovery-server/               Eureka server (@EnableEurekaServer)
 ├── trainer-workload-service/
 │   └── src/main/java/com/epam/trainerworkload
-│       ├── model/                  TrainerWorkload → YearSummary → MonthSummary
-│       ├── repository/             repository interface and in-memory implementation
+│       ├── model/                  MongoDB document: TrainerWorkload → YearSummary → MonthSummary
+│       ├── repository/             Spring Data MongoDB repository
 │       ├── service/                ADD/DELETE rules, monthly summary
 │       ├── messaging/              JMS listener, message reader, dead letter publisher, redelivery
 │       ├── security/               service JWT checks (signature, issuer, audience)
-│       ├── config/                 logging filters, OpenAPI
+│       ├── config/                 logging filters, OpenAPI, document validation
 │       └── web/                    read-only controller, DTOs, error handler, logging filters
 └── gym-crm/
     └── src/main/java/com/epam/gym
@@ -565,5 +618,5 @@ JaCoCo fails the build of an API service if line coverage drops below 80 %. Repo
   copied rather than shared through a library, so the services stay independently buildable and deployable.
 - **Username cannot change; one user, one role; trainer specialization is read-only** after registration.
 - **Login keeps HTTP Basic** so credentials never appear in a URL or request log; everything after login uses JWTs.
-- **Brute force state, revoked tokens and the workload store live in memory:** they reset on restart and are not
-  shared between instances.
+- **Brute force state and revoked tokens live in memory:** they reset on restart and are not shared between
+  instances. Trainer workloads are stored in MongoDB.
